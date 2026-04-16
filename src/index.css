@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply select-none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

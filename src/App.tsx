@@ -1,0 +1,1072 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Settings, 
+  ShoppingBag, 
+  Ghost,
+  Dna, 
+  TrendingUp, 
+  Package, 
+  ChevronRight,
+  Zap,
+  Timer,
+  Coins,
+  Egg,
+  Heart,
+  Sword,
+  Wind,
+  Bug,
+  Trash2,
+  Sparkles,
+  Trophy,
+  PartyPopper,
+  Plus,
+  CircleDollarSign,
+  MessageCircle
+} from 'lucide-react';
+import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
+import { GameWorld } from './components/GameWorld';
+import { 
+  COLORS, 
+  TRAITS, 
+  UPGRADE_COSTS, 
+  EGG_COST, 
+  SLIME_UPGRADE_COST,
+  BASE_RESPAWN_TIME,
+  COIN_CAP,
+  SLIME_NAMES
+} from './constants';
+
+export default function App() {
+  const [state, setState] = useState<GameState>(INITIAL_STATE);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isUpgradesOpen, setIsUpgradesOpen] = useState(false);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
+  const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+
+  const onboardingMessages = [
+    "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
+    "Upgrade your slimes or breed them to create powerful hybrids!",
+    "Let's start collecting. Have fun!"
+  ];
+
+  const completeOnboarding = () => {
+    setState(prev => ({ ...prev, hasCompletedOnboarding: true }));
+  };
+
+  const nextOnboarding = () => {
+    if (onboardingStep < onboardingMessages.length - 1) {
+      setOnboardingStep(prev => prev + 1);
+    } else {
+      completeOnboarding();
+    }
+  };
+
+  // Notification Logic
+  const canAffordEgg = state.coins >= EGG_COST;
+  const canAffordAnyGameUpgrade = 
+    (state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation) ||
+    state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed) ||
+    state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime) ||
+    state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue);
+  
+  const canAffordAnySlimeUpgrade = state.slimes.some(s => state.coins >= SLIME_UPGRADE_COST(s.level));
+  const canAffordBreeding = state.slimes.length >= 2 && state.coins >= 500;
+
+  const hasMarketNotification = canAffordEgg || canAffordAnyGameUpgrade || canAffordAnySlimeUpgrade || canAffordBreeding;
+  const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
+
+
+  // Load state
+  useEffect(() => {
+    const saved = localStorage.getItem('slime_sprout_state');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const now = Date.now();
+      const diff = Math.min(now - parsed.lastSavedTime, 12 * 60 * 60 * 1000); // Cap at 12 hours
+      
+      // Calculate idle progress
+      if (parsed.upgrades.automation > 0) {
+        const respawnInterval = BASE_RESPAWN_TIME / (1 + parsed.upgrades.respawnTime * 0.2);
+        const coinsPerSecond = 1 / (respawnInterval / 1000);
+        const idleCoins = Math.floor((diff / 1000) * coinsPerSecond);
+        const coinValue = Math.pow(2, parsed.upgrades.coinValue - 1);
+        parsed.coins += idleCoins * coinValue;
+        parsed.totalCoinsCollected += idleCoins;
+      }
+      
+      setState({ ...parsed, lastSavedTime: now });
+    }
+
+    // Fake loading
+    const interval = setInterval(() => {
+      setLoadingProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 2;
+      });
+    }, 30);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Save state
+  useEffect(() => {
+    if (!isLoading) {
+      localStorage.setItem('slime_sprout_state', JSON.stringify({
+        ...state,
+        lastSavedTime: Date.now()
+      }));
+    }
+  }, [state, isLoading]);
+
+  const addCoins = useCallback((count: number) => {
+    setState(prev => {
+      const value = Math.pow(2, prev.upgrades.coinValue - 1);
+      return {
+        ...prev,
+        coins: prev.coins + count * value,
+        totalCoinsCollected: prev.totalCoinsCollected + count
+      };
+    });
+  }, []);
+
+  const buyUpgrade = (key: keyof GameState['upgrades']) => {
+    const currentLevel = state.upgrades[key];
+    const cost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
+    
+    if (state.coins >= cost) {
+      setState(prev => ({
+        ...prev,
+        coins: prev.coins - cost,
+        upgrades: {
+          ...prev.upgrades,
+          [key]: prev.upgrades[key] + 1
+        }
+      }));
+    }
+  };
+
+  const buyEgg = () => {
+    if (state.coins >= EGG_COST) {
+      setState(prev => ({
+        ...prev,
+        coins: prev.coins - EGG_COST,
+        eggs: prev.eggs + 1
+      }));
+    }
+  };
+
+  const startHatching = () => {
+    if (state.eggs > 0 && !state.hatchingEgg) {
+      setState(prev => ({
+        ...prev,
+        eggs: prev.eggs - 1,
+        hatchingEgg: {
+          progress: 0,
+          startTime: Date.now()
+        }
+      }));
+    }
+  };
+
+  const pokeEgg = () => {
+    if (state.hatchingEgg) {
+      setState(prev => {
+        if (!prev.hatchingEgg) return prev;
+        const newProgress = prev.hatchingEgg.progress + 5;
+        if (newProgress >= 100) {
+          const newSlime: Slime = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)],
+            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            stats: {
+              health: 10 + Math.floor(Math.random() * 10),
+              strength: 5 + Math.floor(Math.random() * 5),
+              agility: 5 + Math.floor(Math.random() * 5),
+            },
+            trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+            level: 1,
+            value: 50,
+            hatchedAt: Date.now()
+          };
+          return {
+            ...prev,
+            hatchingEgg: null,
+            slimes: [...prev.slimes, newSlime],
+            newlyHatchedSlime: newSlime
+          };
+        }
+        return {
+          ...prev,
+          hatchingEgg: {
+            ...prev.hatchingEgg,
+            progress: newProgress
+          }
+        };
+      });
+    }
+  };
+
+  const upgradeSlimeStat = (id: string, stat: keyof SlimeStats) => {
+    const slime = state.slimes.find(s => s.id === id);
+    if (!slime) return;
+    const cost = SLIME_UPGRADE_COST(slime.level);
+    if (state.coins >= cost) {
+      setState(prev => ({
+        ...prev,
+        coins: prev.coins - cost,
+        slimes: prev.slimes.map(s => s.id === id ? {
+          ...s,
+          level: s.level + 1,
+          value: Math.floor(s.value * 1.2),
+          stats: {
+            ...s.stats,
+            [stat]: s.stats[stat] + (stat === 'health' ? 5 : 2),
+          }
+        } : s)
+      }));
+    }
+  };
+
+  const sellSlime = (id: string) => {
+    const slime = state.slimes.find(s => s.id === id);
+    if (!slime) return;
+    setState(prev => ({
+      ...prev,
+      coins: prev.coins + slime.value,
+      slimes: prev.slimes.filter(s => s.id !== id)
+    }));
+  };
+
+  const breedSlimes = () => {
+    if (breedingSelection.length !== 2) return;
+    const id1 = breedingSelection[0];
+    const id2 = breedingSelection[1];
+    const s1 = state.slimes.find(s => s.id === id1);
+    const s2 = state.slimes.find(s => s.id === id2);
+    if (!s1 || !s2 || state.coins < 500) return;
+
+    const newSlime: Slime = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)],
+      color: s1.color, // Could mix colors
+      stats: {
+        health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
+        strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
+        agility: Math.floor((s1.stats.agility + s2.stats.agility) / 2) + 2,
+      },
+      trait: Math.random() > 0.5 ? s1.trait : s2.trait,
+      level: 1,
+      value: 100,
+      hatchedAt: Date.now()
+    };
+
+    setState(prev => ({
+      ...prev,
+      coins: prev.coins - 500,
+      slimes: [...prev.slimes, newSlime],
+      newlyHatchedSlime: newSlime
+    }));
+    setBreedingSelection([]);
+    setState(s => ({ ...s, activeSubTab: 'collection' }));
+  };
+
+  const toggleBreedingSelection = (id: string) => {
+    setBreedingSelection(prev => {
+      if (prev.includes(id)) return prev.filter(i => i !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  };
+
+  // Debug Actions
+  const debugAddCoins = (amount: number) => {
+    setState(prev => ({ ...prev, coins: prev.coins + amount }));
+  };
+
+  const debugAddEggs = (amount: number) => {
+    setState(prev => ({ ...prev, eggs: prev.eggs + amount }));
+  };
+
+  const debugReset = () => {
+    if (confirm('Reset all progress?')) {
+      setState(INITIAL_STATE);
+      localStorage.removeItem('slime_sprout_state');
+      window.location.reload();
+    }
+  };
+
+  const debugUnlockAll = () => {
+    setState(prev => ({
+      ...prev,
+      upgrades: {
+        automation: 1,
+        movementSpeed: 10,
+        respawnTime: 10,
+        coinValue: 10,
+      }
+    }));
+  };
+
+  if (isLoading && loadingProgress < 100) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
+        <motion.h1 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="text-4xl font-bold text-green-800 mb-8"
+        >
+          Slime Sprouts
+        </motion.h1>
+        <div className="w-full max-w-xs h-4 bg-white/30 rounded-full overflow-hidden border-2 border-green-800 backdrop-blur-sm">
+          <motion.div 
+            className="h-full bg-green-500"
+            initial={{ width: 0 }}
+            animate={{ width: `${loadingProgress}%` }}
+          />
+        </div>
+        <p className="mt-4 text-green-600 font-medium">Loading {loadingProgress}%</p>
+      </div>
+    );
+  }
+
+  if (!hasStarted) {
+    return (
+      <div 
+        className="h-screen w-screen flex flex-col items-center justify-center p-8 cursor-pointer select-none"
+        style={{ backgroundColor: '#86EFAC' }}
+        onClick={() => setHasStarted(true)}
+      >
+        <motion.h1 
+          animate={{ y: [0, -10, 0] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="text-5xl font-bold text-green-800 mb-4 text-center"
+        >
+          Slime Sprouts
+        </motion.h1>
+        <motion.p 
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ repeat: Infinity, duration: 1.5 }}
+          className="text-green-600 text-xl font-bold mt-12"
+        >
+          Tap to continue
+        </motion.p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen w-screen bg-white flex flex-col overflow-hidden max-w-md mx-auto shadow-2xl relative select-none">
+      {/* Onboarding Overlay */}
+      <AnimatePresence>
+        {!state.hasCompletedOnboarding && hasStarted && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-end justify-center p-6 pb-24"
+          >
+            <motion.div 
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="bg-white w-full rounded-3xl p-6 shadow-2xl relative"
+            >
+              <div className="absolute -top-16 left-6 w-20 h-20 bg-green-400 rounded-full shadow-lg flex items-center justify-center border-4 border-white">
+                <div className="flex gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full relative">
+                    <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
+                  </div>
+                  <div className="w-2 h-2 bg-white rounded-full relative">
+                    <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="pt-4">
+                <h3 className="text-lg font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5 text-green-500" />
+                  Guide Slime
+                </h3>
+                <p className="text-gray-600 font-medium leading-relaxed mb-6">
+                  {onboardingMessages[onboardingStep]}
+                </p>
+                
+                <div className="flex justify-between items-center">
+                  <div className="flex gap-1">
+                    {onboardingMessages.map((_, i) => (
+                      <div 
+                        key={i} 
+                        className={`h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-6 bg-green-500' : 'w-2 bg-gray-200'}`} 
+                      />
+                    ))}
+                  </div>
+                  <button 
+                    onClick={nextOnboarding}
+                    className="px-6 py-3 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all"
+                  >
+                    {onboardingStep === onboardingMessages.length - 1 ? "Got it!" : "Next"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header Stats */}
+      <div className="bg-white/80 backdrop-blur-md p-4 flex justify-between items-center border-b z-10">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsDebugOpen(true)}
+            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+          >
+            <Bug className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="bg-yellow-100 p-2 rounded-full">
+              <CircleDollarSign className="w-5 h-5 text-yellow-600" />
+            </div>
+            <span className="font-bold text-xl text-gray-800">{state.coins.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Hatching Celebration Overlay */}
+      <AnimatePresence>
+        {state.newlyHatchedSlime && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-green-500/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 text-center"
+          >
+            <motion.div 
+              initial={{ scale: 0.5, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              className="flex flex-col items-center"
+            >
+              <motion.div 
+                animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="mb-8"
+              >
+                <PartyPopper className="w-16 h-16 text-white mb-4" />
+              </motion.div>
+              
+              <h2 className="text-4xl font-black text-white mb-2">NEW SLIME!</h2>
+              <p className="text-green-100 font-bold mb-8">A beautiful new friend has joined your collection!</p>
+
+              <div className="relative mb-8">
+                <motion.div 
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+                  transition={{ repeat: Infinity, duration: 3 }}
+                  className="absolute inset-0 bg-white rounded-full blur-3xl"
+                />
+                <div 
+                  className="w-40 h-40 rounded-full shadow-2xl relative flex items-center justify-center"
+                  style={{ backgroundColor: state.newlyHatchedSlime.color }}
+                >
+                  {/* Cute Eyes */}
+                  <div className="flex gap-6">
+                    <div className="w-6 h-6 bg-white rounded-full relative">
+                      <div className="absolute top-1 right-1 w-2 h-2 bg-black rounded-full" />
+                      <div className="absolute top-1 left-1 w-1 h-1 bg-black/20 rounded-full" />
+                    </div>
+                    <div className="w-6 h-6 bg-white rounded-full relative">
+                      <div className="absolute top-1 right-1 w-2 h-2 bg-black rounded-full" />
+                      <div className="absolute top-1 left-1 w-1 h-1 bg-black/20 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/20 backdrop-blur-sm p-4 rounded-2xl mb-8 w-full max-w-xs">
+                <h3 className="text-white font-black text-xl mb-1">{state.newlyHatchedSlime.name}</h3>
+                <div className="flex justify-center gap-2">
+                  <span className="bg-white/30 px-3 py-1 rounded-full text-xs font-bold text-white">
+                    {state.newlyHatchedSlime.trait}
+                  </span>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setState(s => ({ ...s, newlyHatchedSlime: null }))}
+                className="px-12 py-4 bg-white text-green-600 font-black rounded-2xl shadow-xl hover:scale-105 transition-transform"
+              >
+                AWESOME!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Debug Menu Overlay */}
+      <AnimatePresence>
+        {isDebugOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white w-full max-w-xs rounded-3xl p-6 shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                  <Bug className="text-red-500" /> Debug Menu
+                </h2>
+                <button onClick={() => setIsDebugOpen(false)} className="text-gray-400">
+                  <ChevronRight className="rotate-90" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 bg-gray-50 rounded-2xl">
+                  <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Currency</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => debugAddCoins(1000)} className="py-2 bg-yellow-100 text-yellow-700 rounded-xl text-xs font-bold">+1k 💰</button>
+                    <button onClick={() => debugAddCoins(10000)} className="py-2 bg-yellow-200 text-yellow-800 rounded-xl text-xs font-bold">+10k 💰</button>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-2xl">
+                  <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Items</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => debugAddEggs(1)} className="py-2 bg-blue-100 text-blue-700 rounded-xl text-xs font-bold">+1 Egg 🥚</button>
+                    <button onClick={() => debugAddEggs(10)} className="py-2 bg-blue-200 text-blue-800 rounded-xl text-xs font-bold">+10 Eggs 🥚</button>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={debugUnlockAll}
+                  className="w-full py-3 bg-green-100 text-green-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+                >
+                  <Zap className="w-4 h-4" /> Max Upgrades
+                </button>
+
+                <button 
+                  onClick={debugReset}
+                  className="w-full py-3 bg-red-100 text-red-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" /> Reset Game
+                </button>
+              </div>
+
+              <button 
+                onClick={() => setIsDebugOpen(false)}
+                className="w-full mt-6 py-4 bg-gray-800 text-white rounded-2xl font-bold"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content Area */}
+      <div className="flex-1 relative overflow-hidden bg-gray-50">
+        <AnimatePresence mode="wait">
+          {state.activeTab === 'game' && (
+            <motion.div 
+              key="game"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-full w-full relative"
+            >
+              <GameWorld 
+                onCollect={addCoins}
+                automationLevel={state.upgrades.automation}
+                movementSpeedLevel={state.upgrades.movementSpeed}
+                respawnTimeLevel={state.upgrades.respawnTime}
+              />
+              
+              {/* Upgrades Toggle Button */}
+              <button 
+                onClick={() => setIsUpgradesOpen(!isUpgradesOpen)}
+                className="absolute top-4 right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50 z-20 text-green-600 hover:scale-110 transition-transform"
+              >
+                <TrendingUp className={`w-6 h-6 transition-transform ${isUpgradesOpen ? 'rotate-180' : ''}`} />
+                {canAffordAnyGameUpgrade && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                )}
+              </button>
+              
+              {/* Game Sub-Tab: Upgrades */}
+              <AnimatePresence>
+                {isUpgradesOpen && (
+                  <motion.div 
+                    initial={{ y: 300, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 300, opacity: 0 }}
+                    className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-white/50 z-20"
+                  >
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4" /> Upgrades
+                      </h3>
+                      <button 
+                        onClick={() => setIsUpgradesOpen(false)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <ChevronRight className="w-5 h-5 rotate-90" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <UpgradeButton 
+                        icon={<Zap className="w-4 h-4" />}
+                        name="Speed"
+                        level={state.upgrades.movementSpeed}
+                        cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                        canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                        onClick={() => buyUpgrade('movementSpeed')}
+                      />
+                      <UpgradeButton 
+                        icon={<Timer className="w-4 h-4" />}
+                        name="Respawn"
+                        level={state.upgrades.respawnTime}
+                        cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                        canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                        onClick={() => buyUpgrade('respawnTime')}
+                      />
+                      <UpgradeButton 
+                        icon={<CircleDollarSign className="w-4 h-4 text-yellow-500" />}
+                        name="Value"
+                        level={state.upgrades.coinValue}
+                        cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                        canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                        onClick={() => buyUpgrade('coinValue')}
+                      />
+                      <UpgradeButton 
+                        icon={<Settings className="w-4 h-4" />}
+                        name="Auto"
+                        level={state.upgrades.automation}
+                        cost={state.upgrades.automation > 0 ? 0 : UPGRADE_COSTS.automation}
+                        canAfford={state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation}
+                        onClick={() => buyUpgrade('automation')}
+                        maxed={state.upgrades.automation > 0}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+
+          {state.activeTab === 'slimes' && (
+            <motion.div 
+              key="slimes"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -100, opacity: 0 }}
+              className="h-full w-full p-4 overflow-y-auto pb-24"
+            >
+              <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
+                {['Buy Eggs', 'Hatching', 'Collection'].map(sub => (
+                  <button
+                    key={sub}
+                    onClick={() => setState(s => ({ ...s, activeSubTab: sub.toLowerCase() }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                      state.activeSubTab === sub.toLowerCase() 
+                      ? 'bg-white shadow-sm text-green-600' 
+                      : 'text-gray-500'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+
+              {state.activeSubTab === 'buy eggs' && (
+                <div className="flex flex-col items-center justify-center h-64 bg-white rounded-3xl border-2 border-dashed border-gray-200 p-8">
+                  <div className="bg-yellow-50 p-6 rounded-full mb-4">
+                    <Egg className="w-16 h-16 text-yellow-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-800 mb-2">Slime Egg</h3>
+                  <p className="text-gray-500 text-center mb-6">Contains a random slime with unique stats and traits!</p>
+                  <button 
+                    onClick={buyEgg}
+                    disabled={state.coins < EGG_COST}
+                    className="w-full py-4 bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-yellow-900 font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-5 h-5" /> Buy for {EGG_COST}
+                  </button>
+                  <p className="mt-4 text-sm font-bold text-gray-400">You have {state.eggs} eggs</p>
+                </div>
+              )}
+
+              {state.activeSubTab === 'hatching' && (
+                <div className="flex flex-col items-center justify-center min-h-[400px]">
+                  {!state.hatchingEgg ? (
+                    <div className="text-center">
+                      <p className="text-gray-500 mb-4">No eggs currently hatching</p>
+                      {state.eggs > 0 && (
+                        <button 
+                          onClick={startHatching}
+                          className="px-8 py-4 bg-green-500 text-white font-bold rounded-2xl shadow-lg"
+                        >
+                          Start Hatching (1 Egg)
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center">
+                      <motion.div 
+                        animate={{ 
+                          scale: [1, 1.05, 1],
+                          rotate: [0, -2, 2, 0]
+                        }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        onClick={pokeEgg}
+                        className="relative cursor-pointer"
+                      >
+                        <Egg className="w-48 h-48 text-yellow-600" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-white font-black text-2xl drop-shadow-lg">POKE!</span>
+                        </div>
+                      </motion.div>
+                      <div className="w-64 h-4 bg-gray-200 rounded-full mt-8 overflow-hidden">
+                        <motion.div 
+                          className="h-full bg-green-500"
+                          animate={{ width: `${state.hatchingEgg.progress}%` }}
+                        />
+                      </div>
+                      <p className="mt-4 font-bold text-green-600">{state.hatchingEgg.progress}% Hatched</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {state.activeSubTab === 'collection' && (
+                <div className="grid grid-cols-2 gap-4">
+                  {state.slimes.map((slime: Slime) => (
+                    <SlimeCard key={slime.id} slime={slime} />
+                  ))}
+                  {state.slimes.length === 0 && (
+                    <div className="col-span-2 text-center py-12 text-gray-400">
+                      No slimes yet. Hatch some eggs!
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {state.activeTab === 'market' && (
+            <motion.div 
+              key="market"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -100, opacity: 0 }}
+              className="h-full w-full p-4 overflow-y-auto pb-24"
+            >
+              <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
+                {['Market', 'Upgrades', 'Breeding'].map(sub => (
+                  <button
+                    key={sub}
+                    onClick={() => setState(s => ({ ...s, activeSubTab: sub.toLowerCase() }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                      state.activeSubTab === sub.toLowerCase() 
+                      ? 'bg-white shadow-sm text-purple-600' 
+                      : 'text-gray-500'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+
+              {state.activeSubTab === 'market' && (
+                <div className="space-y-4">
+                  {state.slimes.map(slime => (
+                    <div key={slime.id} className="bg-white p-4 rounded-2xl shadow-sm border flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full" style={{ backgroundColor: slime.color }} />
+                        <div>
+                          <h4 className="font-bold text-gray-800">{slime.name}</h4>
+                          <p className="text-xs text-gray-500">Value: {slime.value} Coins</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => sellSlime(slime.id)}
+                        className="px-4 py-2 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100"
+                      >
+                        Sell
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {state.activeSubTab === 'upgrades' && (
+                <div className="space-y-4">
+                  {state.slimes.map(slime => (
+                    <div key={slime.id} className="bg-white p-4 rounded-2xl shadow-sm border">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full" style={{ backgroundColor: slime.color }} />
+                          <h4 className="font-bold text-gray-800">{slime.name} (Lv.{slime.level})</h4>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">Upgrade Cost</p>
+                          <p className="text-sm font-bold text-yellow-600">{SLIME_UPGRADE_COST(slime.level)} 💰</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button 
+                          onClick={() => upgradeSlimeStat(slime.id, 'health')}
+                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                          className="flex flex-col items-center p-2 bg-red-50 rounded-xl border border-red-100 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                        >
+                          <Heart className="w-4 h-4 text-red-500 mb-1" />
+                          <div className="text-xs font-bold text-gray-800">{slime.stats.health}</div>
+                          <div className="text-[8px] font-black text-red-400 uppercase">HP +5</div>
+                        </button>
+                        <button 
+                          onClick={() => upgradeSlimeStat(slime.id, 'strength')}
+                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                          className="flex flex-col items-center p-2 bg-orange-50 rounded-xl border border-orange-100 hover:bg-orange-100 disabled:opacity-50 transition-colors"
+                        >
+                          <Sword className="w-4 h-4 text-orange-500 mb-1" />
+                          <div className="text-xs font-bold text-gray-800">{slime.stats.strength}</div>
+                          <div className="text-[8px] font-black text-orange-400 uppercase">STR +2</div>
+                        </button>
+                        <button 
+                          onClick={() => upgradeSlimeStat(slime.id, 'agility')}
+                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                          className="flex flex-col items-center p-2 bg-blue-50 rounded-xl border border-blue-100 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                        >
+                          <Wind className="w-4 h-4 text-blue-500 mb-1" />
+                          <div className="text-xs font-bold text-gray-800">{slime.stats.agility}</div>
+                          <div className="text-[8px] font-black text-blue-400 uppercase">AGI +2</div>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {state.activeSubTab === 'breeding' && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <Dna className="w-12 h-12 text-purple-400 mx-auto mb-2" />
+                    <h3 className="text-xl font-bold text-gray-800">Slime Breeding</h3>
+                    <p className="text-xs text-gray-500">Select 2 slimes to create a hybrid!</p>
+                  </div>
+
+                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex justify-between items-center">
+                    <div>
+                      <p className="text-[10px] font-black text-purple-400 uppercase">Cost</p>
+                      <p className="text-lg font-bold text-purple-600">500 💰</p>
+                    </div>
+                    <button 
+                      onClick={breedSlimes}
+                      disabled={breedingSelection.length !== 2 || state.coins < 500}
+                      className="px-6 py-3 bg-purple-500 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all"
+                    >
+                      Breed Slimes
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {state.slimes.map(slime => {
+                      const isSelected = breedingSelection.includes(slime.id);
+                      return (
+                        <button 
+                          key={slime.id}
+                          onClick={() => toggleBreedingSelection(slime.id)}
+                          className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${
+                            isSelected 
+                            ? 'border-purple-500 bg-purple-50 shadow-md scale-105' 
+                            : 'border-gray-100 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <div 
+                            className="w-12 h-12 rounded-full shadow-inner flex items-center justify-center"
+                            style={{ backgroundColor: slime.color }}
+                          >
+                            <div className="flex gap-1.5">
+                              <div className="w-2 h-2 bg-white rounded-full relative">
+                                <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
+                              </div>
+                              <div className="w-2 h-2 bg-white rounded-full relative">
+                                <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-[10px] font-bold text-gray-800 truncate w-24">{slime.name}</div>
+                            <div className="text-[8px] font-black text-gray-400 uppercase">Lv.{slime.level}</div>
+                          </div>
+                          {isSelected && (
+                            <div className="absolute -top-2 -right-2 bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                              {breedingSelection.indexOf(slime.id) + 1}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {state.slimes.length < 2 && (
+                    <div className="text-center py-8 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <p className="text-gray-400 text-sm">You need at least 2 slimes to breed!</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="bg-white border-t p-2 flex justify-around items-center pb-8">
+        <NavButton 
+          active={state.activeTab === 'game'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
+          icon={<CircleDollarSign />}
+        />
+        <NavButton 
+          active={state.activeTab === 'slimes'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'slimes', activeSubTab: 'collection' }))}
+          icon={<Ghost />}
+          hasNotification={hasSlimesNotification}
+        />
+        <NavButton 
+          active={state.activeTab === 'market'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
+          icon={<TrendingUp />}
+          hasNotification={hasMarketNotification}
+        />
+      </div>
+    </div>
+  );
+}
+
+function NavButton({ active, onClick, icon, hasNotification }: { active: boolean, onClick: () => void, icon: React.ReactNode, hasNotification?: boolean }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all relative ${active ? 'text-green-600' : 'text-gray-400'}`}
+    >
+      <div className={`p-2 rounded-xl transition-all ${active ? 'bg-green-100' : ''}`}>
+        {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
+      </div>
+      {hasNotification && (
+        <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />
+      )}
+    </button>
+  );
+}
+
+interface UpgradeButtonProps {
+  icon: React.ReactNode;
+  name: string;
+  level: number;
+  cost: number;
+  canAfford: boolean;
+  onClick: () => void;
+  maxed?: boolean;
+}
+
+function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: UpgradeButtonProps) {
+  return (
+    <button 
+      onClick={onClick}
+      disabled={!canAfford || maxed}
+      className={`p-3 rounded-xl border flex flex-col gap-1 transition-all ${
+        maxed ? 'bg-gray-50 border-gray-200 opacity-50' :
+        canAfford ? 'bg-white border-green-100 hover:border-green-300' : 'bg-gray-50 border-gray-200 opacity-70'
+      }`}
+    >
+      <div className="flex justify-between items-center w-full">
+        <div className="text-green-600">{icon}</div>
+        <span className="text-[10px] font-black text-gray-400">LV.{level}</span>
+      </div>
+      <div className="text-left">
+        <div className="text-xs font-bold text-gray-800">{name}</div>
+        <div className="text-[10px] font-bold text-green-600">
+          {maxed ? 'MAX' : `${cost.toLocaleString()} 💰`}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+const SlimeCard: React.FC<{ slime: Slime }> = ({ slime }) => {
+  return (
+    <motion.div 
+      initial={{ scale: 0.9, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center"
+    >
+      <div 
+        className="w-16 h-16 rounded-full mb-3 shadow-inner relative overflow-hidden flex items-center justify-center" 
+        style={{ backgroundColor: slime.color }}
+      >
+        {/* Cute Eyes */}
+        <div className="flex gap-2">
+          <div className="w-3 h-3 bg-white rounded-full relative">
+            <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
+          </div>
+          <div className="w-3 h-3 bg-white rounded-full relative">
+            <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
+          </div>
+        </div>
+      </div>
+      <h4 className="font-bold text-gray-800 text-sm mb-1">{slime.name}</h4>
+      <div className="bg-gray-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-gray-500 mb-3">
+        {slime.trait}
+      </div>
+      <div className="w-full space-y-1">
+        <StatBar label="HP" value={slime.stats.health} max={30} color="bg-red-400" />
+        <StatBar label="STR" value={slime.stats.strength} max={20} color="bg-orange-400" />
+        <StatBar label="AGI" value={slime.stats.agility} max={20} color="bg-blue-400" />
+      </div>
+    </motion.div>
+  );
+}
+
+interface StatBarProps {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+}
+
+function StatBar({ label, value, max, color }: StatBarProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[8px] font-black text-gray-400 w-6">{label}</span>
+      <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${(value / max) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+interface StatBadgeProps {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+}
+
+function StatBadge({ icon, value, label }: StatBadgeProps) {
+  return (
+    <div className="bg-gray-50 p-2 rounded-xl flex flex-col items-center">
+      <div className="text-gray-400 mb-1">{icon}</div>
+      <div className="text-xs font-bold text-gray-800">{value}</div>
+      <div className="text-[8px] font-black text-gray-400 uppercase">{label}</div>
+    </div>
+  );
+}
