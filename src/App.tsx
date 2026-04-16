@@ -752,8 +752,9 @@ export default function App() {
                     <SlimeCard key={slime.id} slime={slime} />
                   ))}
                   {state.slimes.length === 0 && (
-                    <div className="col-span-2 text-center py-12 text-gray-400">
-                      No slimes yet. Hatch some eggs!
+                    <div className="col-span-2 text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <p className="text-gray-400 text-sm">No slimes yet. Hatch some eggs!</p>
+                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Buy eggs in the market tab</p>
                     </div>
                   )}
                 </div>
@@ -804,6 +805,12 @@ export default function App() {
                       </button>
                     </div>
                   ))}
+                  {state.slimes.length === 0 && (
+                    <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <p className="text-gray-400 text-sm">You don't have any slimes to sell yet!</p>
+                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Collect coins to buy eggs</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -852,6 +859,12 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+                  {state.slimes.length === 0 && (
+                    <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <p className="text-gray-400 text-sm">You don't have any slimes to upgrade yet!</p>
+                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Hatch eggs in the slimes tab</p>
+                    </div>
+                  )}
                 </div>
               )}
 
