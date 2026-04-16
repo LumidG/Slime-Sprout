@@ -27,29 +27,52 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const coinsRef = useRef<Coin[]>([]);
   const lastRespawnRef = useRef<number>(0);
   const nextCoinId = useRef(0);
-  const targetPosRef = useRef<{ x: number; y: number } | null>(null);
+  const joystickRef = useRef<{ 
+    active: boolean; 
+    baseX: number; 
+    baseY: number; 
+    curX: number; 
+    curY: number; 
+    maxRadius: number;
+  }>({
+    active: false,
+    baseX: 0,
+    baseY: 0,
+    curX: 0,
+    curY: 0,
+    maxRadius: 40,
+  });
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    updateTargetPos(e);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (targetPosRef.current) {
-      updateTargetPos(e);
-    }
-  };
-
-  const handlePointerUp = () => {
-    targetPosRef.current = null;
-  };
-
-  const updateTargetPos = (e: React.PointerEvent) => {
+  const getCanvasCoords = (e: React.PointerEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * GAME_WIDTH;
     const y = ((e.clientY - rect.top) / rect.height) * GAME_HEIGHT;
-    targetPosRef.current = { x, y };
+    return { x, y };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const { x, y } = getCanvasCoords(e);
+    joystickRef.current = {
+      ...joystickRef.current,
+      active: true,
+      baseX: x,
+      baseY: y,
+      curX: x,
+      curY: y,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!joystickRef.current.active) return;
+    const { x, y } = getCanvasCoords(e);
+    joystickRef.current.curX = x;
+    joystickRef.current.curY = y;
+  };
+
+  const handlePointerUp = () => {
+    joystickRef.current.active = false;
   };
 
   // Initialize coins
@@ -77,14 +100,16 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     const frameScale = deltaTime / 16.67; // Normalize to 60fps
     
     let moveDir = { x: 0, y: 0 };
+    let joystickSpeedMult = 1;
 
-    if (targetPosRef.current) {
-      const dx = targetPosRef.current.x - playerRef.current.x;
-      const dy = targetPosRef.current.y - playerRef.current.y;
+    if (joystickRef.current.active) {
+      const dx = joystickRef.current.curX - joystickRef.current.baseX;
+      const dy = joystickRef.current.curY - joystickRef.current.baseY;
       const dist = Math.hypot(dx, dy);
       
-      if (dist > 5) {
+      if (dist > 2) {
         moveDir = { x: dx / dist, y: dy / dist };
+        joystickSpeedMult = Math.min(dist / joystickRef.current.maxRadius, 1);
       }
     } else if (automationLevel > 0 && coinsRef.current.length > 0) {
       // Simple AI: move to nearest coin
@@ -103,8 +128,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
 
     if (moveDir.x !== 0 || moveDir.y !== 0) {
-      playerRef.current.x += moveDir.x * movementSpeed * frameScale;
-      playerRef.current.y += moveDir.y * movementSpeed * frameScale;
+      playerRef.current.x += moveDir.x * movementSpeed * frameScale * joystickSpeedMult;
+      playerRef.current.y += moveDir.y * movementSpeed * frameScale * joystickSpeedMult;
     }
 
     // Bounds check
@@ -228,6 +253,38 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     ctx.fillRect(8, 2 - swing, 4, 8);
 
     ctx.restore();
+
+    // Draw Joystick Overlay
+    if (joystickRef.current.active) {
+      const { baseX, baseY, curX, curY, maxRadius } = joystickRef.current;
+      
+      const dx = curX - baseX;
+      const dy = curY - baseY;
+      const dist = Math.hypot(dx, dy);
+      
+      // Limit thumb distance
+      const thumbDist = Math.min(dist, maxRadius);
+      const angle = Math.atan2(dy, dx);
+      const thumbX = baseX + Math.cos(angle) * thumbDist;
+      const thumbY = baseY + Math.sin(angle) * thumbDist;
+
+      // Draw Base
+      ctx.beginPath();
+      ctx.arc(baseX, baseY, maxRadius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw Thumb
+      ctx.beginPath();
+      ctx.arc(thumbX, thumbY, maxRadius * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.stroke();
+    }
   });
 
   return (

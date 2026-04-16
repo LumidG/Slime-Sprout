@@ -391,7 +391,7 @@ export default function App() {
               <div className="pt-4">
                 <h3 className="text-lg font-black text-gray-800 mb-2 flex items-center gap-2">
                   <MessageCircle className="w-5 h-5 text-green-500" />
-                  Guide Slime
+                  Glim
                 </h3>
                 <p className="text-gray-600 font-medium leading-relaxed mb-6">
                   {onboardingMessages[onboardingStep]}
