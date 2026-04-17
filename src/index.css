@@ -1,9 +1,22 @@
 @import "tailwindcss";
 
 @layer base {
+  /* Single full-viewport shell: no document scrollbars; panels scroll internally. */
+  html {
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
   body {
-    @apply select-none;
+    @apply m-0 min-h-0 w-full max-w-full select-none overflow-hidden bg-white;
+    height: 100%;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    @apply flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden;
   }
 }
 

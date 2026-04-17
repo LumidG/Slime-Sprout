@@ -415,7 +415,7 @@ export default function App() {
 
   if (isLoading && loadingProgress < 100) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
+      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
         <motion.h1 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -438,7 +438,7 @@ export default function App() {
   if (!hasStarted) {
     return (
       <div 
-        className="h-screen w-screen flex flex-col items-center justify-center p-8 cursor-pointer select-none"
+        className="flex h-full min-h-0 w-full flex-col items-center justify-center p-8 cursor-pointer select-none"
         style={{ backgroundColor: '#86EFAC' }}
         onClick={() => setHasStarted(true)}
       >
@@ -461,7 +461,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-white flex flex-col overflow-hidden max-w-md mx-auto shadow-2xl relative select-none">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-white relative select-none">
       {/* Onboarding Overlay */}
       <AnimatePresence>
         {!state.hasCompletedOnboarding && hasStarted && (
@@ -794,7 +794,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className="flex-1 relative overflow-hidden bg-gray-50">
+      <div className="min-h-0 flex-1 relative overflow-hidden bg-gray-50">
         <AnimatePresence mode="wait">
           {state.activeTab === 'game' && (
             <motion.div 
@@ -802,7 +802,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="h-full w-full relative"
+              className="relative h-full min-h-0 w-full"
             >
               <GameWorld 
                 onCollect={addCoins}
@@ -890,7 +890,7 @@ export default function App() {
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
-              className="h-full w-full flex flex-col overflow-hidden"
+              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
               {/* Upper Half: Eggs and Hatching */}
               <div className="flex-none p-3 bg-gradient-to-b from-yellow-50/50 to-white border-b border-gray-100 min-h-[160px] flex flex-col justify-center">
@@ -1080,7 +1080,7 @@ export default function App() {
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
-              className="h-full w-full flex flex-col overflow-hidden"
+              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
               {/* Header with Parent Slots */}
               <div className="p-4 pt-6 text-center space-y-4 bg-white border-b border-purple-50">
@@ -1187,7 +1187,7 @@ export default function App() {
 
               {/* Fixed Bottom Action Panel */}
               <div className="p-4 bg-white/90 backdrop-blur-md border-t border-purple-100 absolute bottom-24 left-0 right-0 z-20">
-                <div className="max-w-md mx-auto flex justify-between items-center gap-4">
+                <div className="mx-auto flex w-full max-w-none justify-between gap-4 px-1">
                   <div className="bg-purple-50 px-4 py-2 rounded-2xl border border-purple-100 flex-1">
                     <p className="text-[8px] font-black text-purple-400 uppercase leading-none mb-1 text-center">Research Fee</p>
                     <p className="text-lg font-black text-purple-600 text-center">500 💰</p>
