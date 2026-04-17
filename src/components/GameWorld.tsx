@@ -633,21 +633,27 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         const barHeight = 3;
         const barY = -drawRadius - 8;
         
-        // Background
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        // Background & Outline
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.beginPath();
         ctx.roundRect(-barWidth/2, barY, barWidth, barHeight, 2);
         ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
         
         // Progress
+        const t = timeNow % cycleTime;
         let progress = 0;
         let color = '#9333EA'; // Purple for active
         
         if (isTraitCycleActive) {
-          progress = 1 - (timeNow % cycleTime) / activeDuration;
+          // Fill up during active burst (0 to 1 in 5s)
+          progress = t / activeDuration;
         } else {
-          progress = ((timeNow % cycleTime) - activeDuration) / (cycleTime - activeDuration);
-          color = '#94A3B8'; // Gray for cooldown
+          // Fill up during cooldown (0 to 1 in 25s)
+          progress = (t - activeDuration) / (cycleTime - activeDuration);
+          color = '#FFFFFF'; // White for cooldown per request
         }
         
         ctx.fillStyle = color;
