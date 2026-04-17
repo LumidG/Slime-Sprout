@@ -30,7 +30,8 @@ import {
   COLORS, 
   TRAITS, 
   UPGRADE_COSTS, 
-  EGG_COST, 
+  EGG_COST,
+  BREEDING_COST,
   SLIME_UPGRADE_COST,
   BASE_RESPAWN_TIME,
   COIN_CAP,
@@ -77,7 +78,7 @@ export default function App() {
     state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue);
   
   const canAffordAnySlimeUpgrade = state.slimes.some(s => state.coins >= SLIME_UPGRADE_COST(s.level));
-  const canAffordBreeding = state.slimes.length >= 2 && state.coins >= 500;
+  const canAffordBreeding = state.slimes.length >= 2 && state.coins >= BREEDING_COST;
 
   const hasMarketNotification = canAffordEgg || canAffordAnyGameUpgrade || canAffordAnySlimeUpgrade || canAffordBreeding;
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
@@ -324,7 +325,7 @@ export default function App() {
     const id2 = breedingSelection[1];
     const s1 = state.slimes.find(s => s.id === id1);
     const s2 = state.slimes.find(s => s.id === id2);
-    if (!s1 || !s2 || state.coins < 500) return;
+    if (!s1 || !s2 || state.coins < BREEDING_COST) return;
 
     const newSlime: Slime = {
       id: Math.random().toString(36).substr(2, 9),
@@ -344,7 +345,7 @@ export default function App() {
 
     setState(prev => ({
       ...prev,
-      coins: prev.coins - 500,
+      coins: prev.coins - BREEDING_COST,
       slimes: [...prev.slimes, newSlime],
       newlyHatchedSlime: newSlime
     }));
@@ -518,22 +519,23 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Header Stats */}
-      <div className="bg-white/80 backdrop-blur-md p-4 flex justify-between items-center border-b z-10">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => setIsDebugOpen(true)}
-            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-          >
-            <Bug className="w-4 h-4" />
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="bg-yellow-100 p-2 rounded-full">
-              <CircleDollarSign className="w-5 h-5 text-yellow-600" />
-            </div>
-            <span className="font-bold text-xl text-gray-800">{state.coins.toLocaleString()}</span>
+      {/* Header Stats — currency centered on screen; debug mirrored in side column for balance */}
+      <div className="z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b bg-white/80 px-2 py-3 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => setIsDebugOpen(true)}
+          className="justify-self-start p-2 text-gray-300 transition-colors hover:text-red-400"
+          aria-label="Debug menu"
+        >
+          <Bug className="h-4 w-4" />
+        </button>
+        <div className="flex items-center justify-center gap-2">
+          <div className="rounded-full bg-yellow-100 p-2">
+            <CircleDollarSign className="h-5 w-5 text-yellow-600" />
           </div>
+          <span className="text-xl font-bold tabular-nums text-gray-800">{state.coins.toLocaleString()}</span>
         </div>
+        <div aria-hidden="true" />
       </div>
 
       {/* Hatching Celebration Overlay */}
@@ -1123,7 +1125,7 @@ export default function App() {
               </div>
 
               {/* Scrollable Selection List */}
-              <div className="flex-1 overflow-y-auto p-3 no-scrollbar pb-32">
+              <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
                 <div className="grid grid-cols-3 gap-2">
                   {state.slimes.map(slime => {
                     const isSelected = breedingSelection.includes(slime.id);
@@ -1131,10 +1133,10 @@ export default function App() {
                       <button 
                         key={slime.id}
                         onClick={() => toggleBreedingSelection(slime.id)}
-                        className={`p-2 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-1.5 relative overflow-hidden ${
+                        className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
                           isSelected 
-                          ? 'border-purple-500 bg-purple-200 shadow-md scale-105 z-10' 
-                          : 'border-gray-50 bg-white hover:border-purple-100 shadow-sm'
+                          ? 'border-purple-500 bg-purple-200 shadow-md ring-2 ring-purple-300/60' 
+                          : 'border-gray-50 bg-white shadow-sm hover:border-purple-100'
                         }`}
                       >
                         <div 
@@ -1185,19 +1187,19 @@ export default function App() {
                 )}
               </div>
 
-              {/* Fixed Bottom Action Panel */}
-              <div className="p-4 bg-white/90 backdrop-blur-md border-t border-purple-100 absolute bottom-24 left-0 right-0 z-20">
-                <div className="mx-auto flex w-full max-w-none justify-between gap-4 px-1">
-                  <div className="bg-purple-50 px-4 py-2 rounded-2xl border border-purple-100 flex-1">
-                    <p className="text-[8px] font-black text-purple-400 uppercase leading-none mb-1 text-center">Research Fee</p>
-                    <p className="text-lg font-black text-purple-600 text-center">500 💰</p>
-                  </div>
-                  <button 
+              {/* Breeds action — flex footer (no absolute overlay on the grid) */}
+              <div className="shrink-0 border-t border-purple-100 bg-white/95 px-4 py-3 backdrop-blur-md">
+                <div className="mx-auto flex w-full max-w-sm justify-center">
+                  <button
+                    type="button"
                     onClick={breedSlimes}
-                    disabled={breedingSelection.length !== 2 || state.coins < 500}
-                    className="flex-[2] py-4 bg-purple-500 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl disabled:opacity-50 disabled:shadow-none hover:bg-purple-600 active:scale-95 transition-all"
+                    disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
+                    className="flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-purple-500 px-6 py-3 text-white shadow-xl transition-all hover:bg-purple-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                   >
-                    Breed Slimes
+                    <span className="text-[11px] font-black uppercase tracking-widest">Breed Slimes</span>
+                    <span className="text-sm font-black tabular-nums text-purple-100">
+                      {BREEDING_COST.toLocaleString()} 💰
+                    </span>
                   </button>
                 </div>
               </div>

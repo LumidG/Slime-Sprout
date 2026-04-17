@@ -58,17 +58,13 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const nextCoinId = useRef(0);
   const nextEffectId = useRef(0);
   const effectsRef = useRef<Effect[]>([]);
-  const joystickRef = useRef<{ 
-    active: boolean; 
-    baseX: number; 
-    baseY: number; 
-    curX: number; 
-    curY: number; 
+  const joystickRef = useRef<{
+    active: boolean;
+    curX: number;
+    curY: number;
     maxRadius: number;
   }>({
     active: false,
-    baseX: 0,
-    baseY: 0,
     curX: 0,
     curY: 0,
     maxRadius: 40,
@@ -112,11 +108,10 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     joystickRef.current = {
       ...joystickRef.current,
       active: true,
-      baseX: x,
-      baseY: y,
       curX: x,
       curY: y,
     };
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -126,8 +121,11 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     joystickRef.current.curY = y;
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
     joystickRef.current.active = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
   };
 
     // Initialize coins
@@ -187,8 +185,10 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     let joystickSpeedMult = 1;
 
     if (joystickRef.current.active) {
-      const dx = joystickRef.current.curX - joystickRef.current.baseX;
-      const dy = joystickRef.current.curY - joystickRef.current.baseY;
+      const baseX = playerRef.current.x;
+      const baseY = playerRef.current.y;
+      const dx = joystickRef.current.curX - baseX;
+      const dy = joystickRef.current.curY - baseY;
       const dist = Math.hypot(dx, dy);
       
       if (dist > 2) {
@@ -722,9 +722,11 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       ctx.restore();
     });
 
-    // Draw Joystick Overlay
+    // Draw Joystick Overlay (base locked to player each frame)
     if (joystickRef.current.active) {
-      const { baseX, baseY, curX, curY, maxRadius } = joystickRef.current;
+      const baseX = playerRef.current.x;
+      const baseY = playerRef.current.y;
+      const { curX, curY, maxRadius } = joystickRef.current;
       
       const dx = curX - baseX;
       const dy = curY - baseY;
@@ -736,16 +738,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       const thumbX = baseX + Math.cos(angle) * thumbDist;
       const thumbY = baseY + Math.sin(angle) * thumbDist;
 
-      // Draw Base
-      ctx.beginPath();
-      ctx.arc(baseX, baseY, maxRadius, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Draw Thumb
+      // Stick only (no base ring)
       ctx.beginPath();
       ctx.arc(thumbX, thumbY, maxRadius * 0.4, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -762,6 +755,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onPointerLeave={handlePointerUp}
         className="touch-none"
         style={{ width: '100%', height: '100%', display: 'block' }}

@@ -61,6 +61,9 @@ export const UPGRADE_COSTS = {
 
 export const EGG_COST = 100;
 
+/** Coins required to breed two slimes (market tab). */
+export const BREEDING_COST = 500;
+
 export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.8, level));
 
 export const SLIME_NAMES = [
