@@ -17,6 +17,7 @@ export interface Slime {
   name: string;
   color: string;
   stats: SlimeStats;
+  statLevels: SlimeStats; // Individual levels for pricing
   trait: SlimeTrait;
   level: number;
   value: number;

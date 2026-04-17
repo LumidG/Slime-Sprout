@@ -247,6 +247,7 @@ export default function App() {
               strength: 5 + Math.floor(Math.random() * 5),
               agility: 5 + Math.floor(Math.random() * 5),
             },
+            statLevels: { health: 1, strength: 1, agility: 1 },
             trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
             level: 1,
             value: 50,
@@ -273,7 +274,9 @@ export default function App() {
   const upgradeSlimeStat = (id: string, stat: keyof SlimeStats) => {
     const slime = state.slimes.find(s => s.id === id);
     if (!slime) return;
-    const cost = SLIME_UPGRADE_COST(slime.level);
+    const currentStatLevel = slime.statLevels[stat];
+    const cost = SLIME_UPGRADE_COST(currentStatLevel);
+    
     if (state.coins >= cost) {
       setState(prev => {
         const updatedSlimes = prev.slimes.map(s => s.id === id ? {
@@ -283,6 +286,10 @@ export default function App() {
           stats: {
             ...s.stats,
             [stat]: s.stats[stat] + (stat === 'health' ? 5 : 2),
+          },
+          statLevels: {
+            ...s.statLevels,
+            [stat]: s.statLevels[stat] + 1
           }
         } : s);
         
@@ -328,6 +335,7 @@ export default function App() {
         strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
         agility: Math.floor((s1.stats.agility + s2.stats.agility) / 2) + 2,
       },
+      statLevels: { health: 1, strength: 1, agility: 1 },
       trait: Math.random() > 0.5 ? s1.trait : s2.trait,
       level: 1,
       value: 100,
@@ -392,6 +400,7 @@ export default function App() {
           strength: 5 + Math.floor(Math.random() * 5),
           agility: 5 + Math.floor(Math.random() * 5),
         },
+        statLevels: { health: 1, strength: 1, agility: 1 },
         trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
         level: 1,
         value: 50,
@@ -692,101 +701,90 @@ export default function App() {
                 <Plus className="w-5 h-5 rotate-45" />
               </button>
 
-              <div className="flex flex-col items-center pt-4">
+              <div className="flex flex-col items-center pt-2">
                 <motion.div 
                   initial={{ rotate: -5, scale: 0.8 }}
                   animate={{ rotate: 0, scale: 1 }}
-                  className="w-32 h-32 rounded-full mb-6 shadow-2xl relative flex items-center justify-center overflow-hidden" 
+                  className="w-20 h-20 rounded-full mb-4 shadow-xl relative flex items-center justify-center overflow-hidden" 
                   style={{ backgroundColor: selectedSlimeDetail.color }}
                 >
-                  <div className="flex gap-4">
-                    <div className="w-4 h-4 bg-white rounded-full relative">
-                      <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-black rounded-full" />
+                  <div className="flex gap-2.5">
+                    <div className="w-2.5 h-2.5 bg-white rounded-full relative">
+                      <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
                     </div>
-                    <div className="w-4 h-4 bg-white rounded-full relative">
-                      <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-black rounded-full" />
+                    <div className="w-2.5 h-2.5 bg-white rounded-full relative">
+                      <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
                     </div>
                   </div>
-                  <div className="absolute bottom-4 w-8 h-2 bg-black/20 rounded-full" />
+                  <div className="absolute bottom-2.5 w-6 h-1 bg-black/20 rounded-full" />
                 </motion.div>
 
-                <h3 className="text-2xl font-black text-gray-800 mb-1">{selectedSlimeDetail.name}</h3>
-                <div className="flex gap-2 mb-6">
-                  <span className="bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                <h3 className="text-xl font-black text-gray-800 mb-1">{selectedSlimeDetail.name}</h3>
+                <div className="flex gap-2 mb-4">
+                  <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">
                     Level {selectedSlimeDetail.level}
                   </span>
-                  <span className="bg-green-100 text-green-600 px-3 py-1 rounded-full text-[10px] font-black uppercase">
+                  <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">
                     {selectedSlimeDetail.trait}
                   </span>
                 </div>
 
-                <div className="w-full bg-gray-50 rounded-3xl p-4 mb-6 space-y-4">
-                  <div className="text-center mb-2">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Ability</p>
+                <div className="w-full bg-gray-50 rounded-[2rem] p-4 mb-4 space-y-4">
+                  <div className="text-center mb-1">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Ability</p>
                     <p className="text-xs font-bold text-gray-600 italic">"{TRAIT_EFFECTS[selectedSlimeDetail.trait].description}"</p>
                   </div>
 
-                  <div className="text-center pt-2">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.15em] border-t border-gray-100 pt-3 mb-1">Tap skills to upgrade</p>
+                  <div className="text-center pt-1">
+                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-[0.15em] border-t border-gray-100 pt-2 mb-1">Tap skills to upgrade</p>
                   </div>
                       {/* Stat Upgrade Buttons */}
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-3 gap-2">
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'health')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.level)}
-                          className="group relative bg-red-50 p-2 py-3 rounded-xl flex flex-col items-center border border-red-100 hover:border-red-300 disabled:opacity-50 transition-all"
+                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}
+                          className="group relative bg-red-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-red-100 hover:border-red-300 disabled:opacity-50 transition-all shadow-sm"
                         >
-                          <div className="text-red-500 mb-1 group-active:scale-110 transition-transform"><Heart className="w-5 h-5" /></div>
-                          <div className="text-xs font-black text-gray-800">{selectedSlimeDetail.stats.health}</div>
-                          <div className="text-[7px] font-black text-red-400 uppercase mb-1">HP UP</div>
-                          <div className="text-[8px] font-black text-yellow-600 bg-white/80 px-1.5 rounded-full shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.level)}💰</div>
+                          <div className="text-red-500 mb-2 group-active:scale-110 transition-transform"><Heart className="w-6 h-6" /></div>
+                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.health}</div>
+                          <div className="text-[9px] font-black text-red-400 uppercase mb-2">HP UP</div>
+                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
                         </button>
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'strength')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.level)}
-                          className="group relative bg-orange-50 p-2 py-3 rounded-xl flex flex-col items-center border border-orange-100 hover:border-orange-300 disabled:opacity-50 transition-all"
+                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}
+                          className="group relative bg-orange-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-orange-100 hover:border-orange-300 disabled:opacity-50 transition-all shadow-sm"
                         >
-                          <div className="text-orange-500 mb-1 group-active:scale-110 transition-transform"><Sword className="w-5 h-5" /></div>
-                          <div className="text-xs font-black text-gray-800">{selectedSlimeDetail.stats.strength}</div>
-                          <div className="text-[7px] font-black text-orange-400 uppercase mb-1">STR UP</div>
-                          <div className="text-[8px] font-black text-yellow-600 bg-white/80 px-1.5 rounded-full shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.level)}💰</div>
+                          <div className="text-orange-500 mb-2 group-active:scale-110 transition-transform"><Sword className="w-6 h-6" /></div>
+                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.strength}</div>
+                          <div className="text-[9px] font-black text-orange-400 uppercase mb-2">STR UP</div>
+                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
                         </button>
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'agility')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.level)}
-                          className="group relative bg-blue-50 p-2 py-3 rounded-xl flex flex-col items-center border border-blue-100 hover:border-blue-300 disabled:opacity-50 transition-all"
+                          disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}
+                          className="group relative bg-blue-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-blue-100 hover:border-blue-300 disabled:opacity-50 transition-all shadow-sm"
                         >
-                          <div className="text-blue-500 mb-1 group-active:scale-110 transition-transform"><Wind className="w-5 h-5" /></div>
-                          <div className="text-xs font-black text-gray-800">{selectedSlimeDetail.stats.agility}</div>
-                          <div className="text-[7px] font-black text-blue-400 uppercase mb-1">AGI UP</div>
-                          <div className="text-[8px] font-black text-yellow-600 bg-white/80 px-1.5 rounded-full shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.level)}💰</div>
+                          <div className="text-blue-500 mb-2 group-active:scale-110 transition-transform"><Wind className="w-6 h-6" /></div>
+                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.agility}</div>
+                          <div className="text-[9px] font-black text-blue-400 uppercase mb-2">AGI UP</div>
+                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex gap-2 w-full">
+                    <div className="w-full mt-2">
                       <button 
                         onClick={() => {
                           toggleEquipSlime(selectedSlimeDetail.id);
                         }}
-                        className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg transition-all ${
+                        className={`w-full py-3 rounded-xl font-black uppercase tracking-widest shadow-md transition-all text-xs ${
                           state.equippedSlimeIds.includes(selectedSlimeDetail.id)
                           ? 'bg-red-500 text-white hover:bg-red-600'
                           : 'bg-green-500 text-white hover:bg-green-600'
                         }`}
                       >
                         {state.equippedSlimeIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (confirm(`Sell ${selectedSlimeDetail.name} for ${selectedSlimeDetail.value} coins?`)) {
-                            sellSlime(selectedSlimeDetail.id);
-                            setSelectedSlimeDetail(null);
-                          }
-                        }}
-                        className="p-4 bg-gray-100 text-gray-400 rounded-2xl hover:text-red-500 hover:bg-red-50 transition-all shadow-md group"
-                      >
-                        <Trash2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
                       </button>
                     </div>
               </div>
