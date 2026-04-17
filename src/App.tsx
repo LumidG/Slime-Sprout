@@ -34,7 +34,9 @@ import {
   SLIME_UPGRADE_COST,
   BASE_RESPAWN_TIME,
   COIN_CAP,
-  SLIME_NAMES
+  SLIME_NAMES,
+  TRAIT_EFFECTS,
+  MAX_EQUIPPED_SLIMES
 } from './constants';
 
 export default function App() {
@@ -127,14 +129,49 @@ export default function App() {
 
   const addCoins = useCallback((count: number) => {
     setState(prev => {
-      const value = Math.pow(2, prev.upgrades.coinValue - 1);
+      const upgradeValue = Math.pow(2, prev.upgrades.coinValue - 1);
+      
+      // Calculate trait bonus
+      let traitBonus = 0;
+      prev.equippedSlimeIds.forEach(id => {
+        const slime = prev.slimes.find(s => s.id === id);
+        if (slime && slime.trait) {
+          traitBonus += TRAIT_EFFECTS[slime.trait].coinValue || 0;
+        }
+      });
+
+      const totalValuePerCoin = upgradeValue + traitBonus;
       return {
         ...prev,
-        coins: prev.coins + count * value,
+        coins: prev.coins + count * totalValuePerCoin,
         totalCoinsCollected: prev.totalCoinsCollected + count
       };
     });
   }, []);
+
+  const toggleEquipSlime = (id: string) => {
+    setState(prev => {
+      const isEquipped = prev.equippedSlimeIds.includes(id);
+      if (isEquipped) {
+        return {
+          ...prev,
+          equippedSlimeIds: prev.equippedSlimeIds.filter(i => i !== id)
+        };
+      } else {
+        if (prev.equippedSlimeIds.length >= MAX_EQUIPPED_SLIMES) {
+          // Maybe show a toast or just swap? Let's swap the first one for simplicity or just block
+          return {
+            ...prev,
+            equippedSlimeIds: [...prev.equippedSlimeIds.slice(1), id]
+          };
+        }
+        return {
+          ...prev,
+          equippedSlimeIds: [...prev.equippedSlimeIds, id]
+        };
+      }
+    });
+  };
 
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
     const currentLevel = state.upgrades[key];
@@ -175,6 +212,24 @@ export default function App() {
     }
   };
 
+  const getUniqueName = (existingSlimes: Slime[]) => {
+    const usedNames = new Set(existingSlimes.map(s => s.name));
+    const availableNames = SLIME_NAMES.filter(name => !usedNames.has(name));
+    
+    if (availableNames.length > 0) {
+      return availableNames[Math.floor(Math.random() * availableNames.length)];
+    }
+    
+    // Fallback if all names are used: Name + Random number
+    let fallbackName = '';
+    do {
+      const baseName = SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)];
+      fallbackName = `${baseName} ${Math.floor(Math.random() * 1000)}`;
+    } while (usedNames.has(fallbackName));
+    
+    return fallbackName;
+  };
+
   const pokeEgg = () => {
     if (state.hatchingEgg) {
       setState(prev => {
@@ -183,7 +238,7 @@ export default function App() {
         if (newProgress >= 100) {
           const newSlime: Slime = {
             id: Math.random().toString(36).substr(2, 9),
-            name: SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)],
+            name: getUniqueName(prev.slimes),
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
             stats: {
               health: 10 + Math.floor(Math.random() * 10),
@@ -254,7 +309,7 @@ export default function App() {
 
     const newSlime: Slime = {
       id: Math.random().toString(36).substr(2, 9),
-      name: SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)],
+      name: getUniqueName(state.slimes),
       color: s1.color, // Could mix colors
       stats: {
         health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
@@ -312,6 +367,29 @@ export default function App() {
         coinValue: 10,
       }
     }));
+  };
+
+  const debugAddSlime = () => {
+    setState(prev => {
+      const newSlime: Slime = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: getUniqueName(prev.slimes),
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        stats: {
+          health: 10 + Math.floor(Math.random() * 10),
+          strength: 5 + Math.floor(Math.random() * 5),
+          agility: 5 + Math.floor(Math.random() * 5),
+        },
+        trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+        level: 1,
+        value: 50,
+        hatchedAt: Date.now()
+      };
+      return {
+        ...prev,
+        slimes: [...prev.slimes, newSlime]
+      };
+    });
   };
 
   if (isLoading && loadingProgress < 100) {
@@ -543,6 +621,12 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => debugAddEggs(1)} className="py-2 bg-blue-100 text-blue-700 rounded-xl text-xs font-bold">+1 Egg 🥚</button>
                     <button onClick={() => debugAddEggs(10)} className="py-2 bg-blue-200 text-blue-800 rounded-xl text-xs font-bold">+10 Eggs 🥚</button>
+                    <button 
+                      onClick={debugAddSlime} 
+                      className="col-span-2 py-2 bg-purple-100 text-purple-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3" /> Add Random Slime
+                    </button>
                   </div>
                 </div>
 
@@ -588,6 +672,7 @@ export default function App() {
                 automationLevel={state.upgrades.automation}
                 movementSpeedLevel={state.upgrades.movementSpeed}
                 respawnTimeLevel={state.upgrades.respawnTime}
+                equippedSlimes={state.slimes.filter(s => state.equippedSlimeIds.includes(s.id))}
               />
               
               {/* Upgrades Toggle Button */}
@@ -668,97 +753,117 @@ export default function App() {
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
-              className="h-full w-full p-4 overflow-y-auto pb-24"
+              className="h-full w-full flex flex-col overflow-hidden pb-24"
             >
-              <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
-                {['Buy Eggs', 'Hatching', 'Collection'].map(sub => (
-                  <button
-                    key={sub}
-                    onClick={() => setState(s => ({ ...s, activeSubTab: sub.toLowerCase() }))}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                      state.activeSubTab === sub.toLowerCase() 
-                      ? 'bg-white shadow-sm text-green-600' 
-                      : 'text-gray-500'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
+              {/* Upper Half: Eggs and Hatching */}
+              <div className="flex-none p-4 bg-gradient-to-b from-yellow-50/50 to-white border-b border-gray-100">
+                <div className="grid grid-cols-3 gap-4 h-48 items-center">
+                  {/* Left: Buy Section */}
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={buyEgg}
+                      disabled={state.coins < EGG_COST}
+                      className="p-4 bg-white border-2 border-yellow-200 hover:border-yellow-400 disabled:opacity-50 text-yellow-700 font-black rounded-2xl shadow-sm transition-all flex flex-col items-center justify-center gap-1 group"
+                    >
+                      <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] uppercase">Buy Egg</span>
+                      <span className="text-xs">{EGG_COST} 💰</span>
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[10px] font-black text-gray-400 uppercase">Your Eggs</p>
+                      <p className="text-lg font-bold text-gray-700">{state.eggs}</p>
+                    </div>
+                  </div>
+
+                  {/* Middle: Hatching Area */}
+                  <div className="flex flex-col items-center justify-center relative">
+                    {!state.hatchingEgg ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+                          <Egg className="w-8 h-8 text-gray-300" />
+                        </div>
+                        {state.eggs > 0 ? (
+                          <button 
+                            onClick={startHatching}
+                            className="text-[10px] font-black bg-green-500 text-white px-3 py-1.5 rounded-full shadow-sm animate-pulse"
+                          >
+                            HATCH NOW
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-black text-gray-400 uppercase">No Eggs</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <motion.div 
+                          animate={{ 
+                            scale: [1, 1.05, 1],
+                            rotate: [0, -2, 2, 0]
+                          }}
+                          transition={{ repeat: Infinity, duration: 2 }}
+                          onClick={pokeEgg}
+                          className="relative cursor-pointer group"
+                        >
+                          <Egg className="w-24 h-24 text-yellow-600 drop-shadow-md" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                             <motion.span 
+                               animate={{ scale: [1, 1.2, 1] }} 
+                               transition={{ repeat: Infinity, duration: 0.5 }}
+                               className="text-white font-black text-xs drop-shadow-lg"
+                             >
+                               POKE!
+                             </motion.span>
+                          </div>
+                        </motion.div>
+                        <div className="w-32 h-2 bg-gray-200 rounded-full mt-4 overflow-hidden border border-gray-100">
+                          <motion.div 
+                            className="h-full bg-green-500"
+                            animate={{ width: `${state.hatchingEgg.progress}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[10px] font-black text-green-600 uppercase tracking-tighter">{state.hatchingEgg.progress}% Hatched</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Info/Stats */}
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <Trophy className="w-8 h-8 text-yellow-400 mb-2" />
+                    <p className="text-[10px] font-black text-gray-400 uppercase">Collection</p>
+                    <p className="text-lg font-bold text-gray-700">{state.slimes.length}</p>
+                    <p className="text-[10px] font-bold text-gray-400">Total Found</p>
+                  </div>
+                </div>
               </div>
 
-              {state.activeSubTab === 'buy eggs' && (
-                <div className="flex flex-col items-center justify-center h-64 bg-white rounded-3xl border-2 border-dashed border-gray-200 p-8">
-                  <div className="bg-yellow-50 p-6 rounded-full mb-4">
-                    <Egg className="w-16 h-16 text-yellow-500" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-800 mb-2">Slime Egg</h3>
-                  <p className="text-gray-500 text-center mb-6">Contains a random slime with unique stats and traits!</p>
-                  <button 
-                    onClick={buyEgg}
-                    disabled={state.coins < EGG_COST}
-                    className="w-full py-4 bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-yellow-900 font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
-                  >
-                    <Plus className="w-5 h-5" /> Buy for {EGG_COST}
-                  </button>
-                  <p className="mt-4 text-sm font-bold text-gray-400">You have {state.eggs} eggs</p>
+              {/* Lower Half: Collection Overview */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="flex justify-between items-center mb-2 px-2">
+                  <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                    <Ghost className="w-4 h-4 text-green-500" /> My Slimes
+                  </h3>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">
+                    Equipped: {state.equippedSlimeIds.length} / {MAX_EQUIPPED_SLIMES}
+                  </p>
                 </div>
-              )}
 
-              {state.activeSubTab === 'hatching' && (
-                <div className="flex flex-col items-center justify-center min-h-[400px]">
-                  {!state.hatchingEgg ? (
-                    <div className="text-center">
-                      <p className="text-gray-500 mb-4">No eggs currently hatching</p>
-                      {state.eggs > 0 && (
-                        <button 
-                          onClick={startHatching}
-                          className="px-8 py-4 bg-green-500 text-white font-bold rounded-2xl shadow-lg"
-                        >
-                          Start Hatching (1 Egg)
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      <motion.div 
-                        animate={{ 
-                          scale: [1, 1.05, 1],
-                          rotate: [0, -2, 2, 0]
-                        }}
-                        transition={{ repeat: Infinity, duration: 2 }}
-                        onClick={pokeEgg}
-                        className="relative cursor-pointer"
-                      >
-                        <Egg className="w-48 h-48 text-yellow-600" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-white font-black text-2xl drop-shadow-lg">POKE!</span>
-                        </div>
-                      </motion.div>
-                      <div className="w-64 h-4 bg-gray-200 rounded-full mt-8 overflow-hidden">
-                        <motion.div 
-                          className="h-full bg-green-500"
-                          animate={{ width: `${state.hatchingEgg.progress}%` }}
-                        />
-                      </div>
-                      <p className="mt-4 font-bold text-green-600">{state.hatchingEgg.progress}% Hatched</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {state.activeSubTab === 'collection' && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 pb-4">
                   {state.slimes.map((slime: Slime) => (
-                    <SlimeCard key={slime.id} slime={slime} />
+                    <SlimeCard 
+                      key={slime.id} 
+                      slime={slime} 
+                      isEquipped={state.equippedSlimeIds.includes(slime.id)}
+                      onEquip={toggleEquipSlime}
+                    />
                   ))}
                   {state.slimes.length === 0 && (
-                    <div className="col-span-2 text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                      <p className="text-gray-400 text-sm">No slimes yet. Hatch some eggs!</p>
-                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Buy eggs in the market tab</p>
+                    <div className="col-span-2 text-center py-12 bg-white rounded-3xl border-2 border-dashed border-gray-100">
+                      <p className="text-gray-400 text-sm font-medium">No slimes yet.</p>
+                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Buy and hatch your first egg!</p>
                     </div>
                   )}
                 </div>
-              )}
+              </div>
             </motion.div>
           )}
 
@@ -768,182 +873,171 @@ export default function App() {
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
-              className="h-full w-full p-4 overflow-y-auto pb-24"
+              className="h-full w-full flex flex-col overflow-hidden pb-24"
             >
-              <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl">
-                {['Market', 'Upgrades', 'Breeding'].map(sub => (
-                  <button
-                    key={sub}
-                    onClick={() => setState(s => ({ ...s, activeSubTab: sub.toLowerCase() }))}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                      state.activeSubTab === sub.toLowerCase() 
-                      ? 'bg-white shadow-sm text-purple-600' 
-                      : 'text-gray-500'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
+              <div className="p-4 bg-white border-b flex gap-2">
+                <button 
+                  onClick={() => setState(s => ({ ...s, activeSubTab: 'market' }))}
+                  className={`flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${state.activeSubTab !== 'breeding' ? 'bg-purple-100 text-purple-700' : 'text-gray-400 hover:bg-gray-50'}`}
+                >
+                  Slime Lab
+                </button>
+                <button 
+                  onClick={() => setState(s => ({ ...s, activeSubTab: 'breeding' }))}
+                  className={`flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${state.activeSubTab === 'breeding' ? 'bg-purple-100 text-purple-700' : 'text-gray-400 hover:bg-gray-50'}`}
+                >
+                  Breeding
+                </button>
               </div>
 
-              {state.activeSubTab === 'market' && (
-                <div className="space-y-4">
-                  {state.slimes.map(slime => (
-                    <div key={slime.id} className="bg-white p-4 rounded-2xl shadow-sm border flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full" style={{ backgroundColor: slime.color }} />
-                        <div>
-                          <h4 className="font-bold text-gray-800">{slime.name}</h4>
-                          <p className="text-xs text-gray-500">Value: {slime.value} Coins</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => sellSlime(slime.id)}
-                        className="px-4 py-2 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100"
-                      >
-                        Sell
-                      </button>
-                    </div>
-                  ))}
-                  {state.slimes.length === 0 && (
-                    <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                      <p className="text-gray-400 text-sm">You don't have any slimes to sell yet!</p>
-                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Collect coins to buy eggs</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {state.activeSubTab === 'upgrades' && (
-                <div className="space-y-4">
-                  {state.slimes.map(slime => (
-                    <div key={slime.id} className="bg-white p-4 rounded-2xl shadow-sm border">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full" style={{ backgroundColor: slime.color }} />
-                          <h4 className="font-bold text-gray-800">{slime.name} (Lv.{slime.level})</h4>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-black text-gray-400 uppercase">Upgrade Cost</p>
-                          <p className="text-sm font-bold text-yellow-600">{SLIME_UPGRADE_COST(slime.level)} 💰</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <button 
-                          onClick={() => upgradeSlimeStat(slime.id, 'health')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
-                          className="flex flex-col items-center p-2 bg-red-50 rounded-xl border border-red-100 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                        >
-                          <Heart className="w-4 h-4 text-red-500 mb-1" />
-                          <div className="text-xs font-bold text-gray-800">{slime.stats.health}</div>
-                          <div className="text-[8px] font-black text-red-400 uppercase">HP +5</div>
-                        </button>
-                        <button 
-                          onClick={() => upgradeSlimeStat(slime.id, 'strength')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
-                          className="flex flex-col items-center p-2 bg-orange-50 rounded-xl border border-orange-100 hover:bg-orange-100 disabled:opacity-50 transition-colors"
-                        >
-                          <Sword className="w-4 h-4 text-orange-500 mb-1" />
-                          <div className="text-xs font-bold text-gray-800">{slime.stats.strength}</div>
-                          <div className="text-[8px] font-black text-orange-400 uppercase">STR +2</div>
-                        </button>
-                        <button 
-                          onClick={() => upgradeSlimeStat(slime.id, 'agility')}
-                          disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
-                          className="flex flex-col items-center p-2 bg-blue-50 rounded-xl border border-blue-100 hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                        >
-                          <Wind className="w-4 h-4 text-blue-500 mb-1" />
-                          <div className="text-xs font-bold text-gray-800">{slime.stats.agility}</div>
-                          <div className="text-[8px] font-black text-blue-400 uppercase">AGI +2</div>
-                        </button>
+              <div className="flex-1 overflow-y-auto p-4">
+                {state.activeSubTab !== 'breeding' ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-purple-50 p-4 rounded-3xl border border-purple-100 mb-2">
+                       <div>
+                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-purple-500" /> Slime Lab
+                        </h3>
+                        <p className="text-[10px] text-purple-600 font-bold uppercase">Upgrade or Sell your slimes</p>
                       </div>
                     </div>
-                  ))}
-                  {state.slimes.length === 0 && (
-                    <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                      <p className="text-gray-400 text-sm">You don't have any slimes to upgrade yet!</p>
-                      <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Hatch eggs in the slimes tab</p>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {state.activeSubTab === 'breeding' && (
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <Dna className="w-12 h-12 text-purple-400 mx-auto mb-2" />
-                    <h3 className="text-xl font-bold text-gray-800">Slime Breeding</h3>
-                    <p className="text-xs text-gray-500">Select 2 slimes to create a hybrid!</p>
-                  </div>
-
-                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex justify-between items-center">
-                    <div>
-                      <p className="text-[10px] font-black text-purple-400 uppercase">Cost</p>
-                      <p className="text-lg font-bold text-purple-600">500 💰</p>
-                    </div>
-                    <button 
-                      onClick={breedSlimes}
-                      disabled={breedingSelection.length !== 2 || state.coins < 500}
-                      className="px-6 py-3 bg-purple-500 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all"
-                    >
-                      Breed Slimes
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {state.slimes.map(slime => {
-                      const isSelected = breedingSelection.includes(slime.id);
-                      return (
-                        <button 
-                          key={slime.id}
-                          onClick={() => toggleBreedingSelection(slime.id)}
-                          className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${
-                            isSelected 
-                            ? 'border-purple-500 bg-purple-50 shadow-md scale-105' 
-                            : 'border-gray-100 bg-white hover:border-purple-200'
-                          }`}
-                        >
-                          <div 
-                            className="w-12 h-12 rounded-full shadow-inner flex items-center justify-center"
-                            style={{ backgroundColor: slime.color }}
+                    {state.slimes.map(slime => (
+                      <div key={slime.id} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 h-auto">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full shadow-inner relative" style={{ backgroundColor: slime.color }}>
+                              <div className="absolute inset-0 flex items-center justify-center opacity-30">
+                                <Bug className="w-6 h-6 text-white" />
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-gray-800 text-sm">{slime.name}</h4>
+                              <p className="text-[10px] font-black text-purple-500 uppercase tracking-tight">Level {slime.level}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => sellSlime(slime.id)}
+                            className="p-2 text-red-400 hover:text-red-600 transition-colors"
                           >
-                            <div className="flex gap-1.5">
-                              <div className="w-2 h-2 bg-white rounded-full relative">
-                                <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-                              </div>
-                              <div className="w-2 h-2 bg-white rounded-full relative">
-                                <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-[10px] font-bold text-gray-800 truncate w-24">{slime.name}</div>
-                            <div className="text-[8px] font-black text-gray-400 uppercase">Lv.{slime.level}</div>
-                          </div>
-                          {isSelected && (
-                            <div className="absolute -top-2 -right-2 bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
-                              {breedingSelection.indexOf(slime.id) + 1}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
 
-                  {state.slimes.length < 2 && (
-                    <div className="text-center py-8 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                      <p className="text-gray-400 text-sm">You need at least 2 slimes to breed!</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button 
+                            onClick={() => upgradeSlimeStat(slime.id, 'health')}
+                            disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                            className="flex flex-col items-center p-3 bg-red-50/50 rounded-2xl border border-red-100 hover:bg-red-50 disabled:opacity-50 transition-all"
+                          >
+                            <Heart className="w-4 h-4 text-red-500 mb-1" />
+                            <span className="text-[10px] font-black text-gray-800">{slime.stats.health}</span>
+                          </button>
+                          <button 
+                            onClick={() => upgradeSlimeStat(slime.id, 'strength')}
+                            disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                            className="flex flex-col items-center p-3 bg-orange-50/50 rounded-2xl border border-orange-100 hover:bg-orange-50 disabled:opacity-50 transition-all"
+                          >
+                            <Sword className="w-4 h-4 text-orange-500 mb-1" />
+                            <span className="text-[10px] font-black text-gray-800">{slime.stats.strength}</span>
+                          </button>
+                          <button 
+                            onClick={() => upgradeSlimeStat(slime.id, 'agility')}
+                            disabled={state.coins < SLIME_UPGRADE_COST(slime.level)}
+                            className="flex flex-col items-center p-3 bg-blue-50/50 rounded-2xl border border-blue-100 hover:bg-blue-50 disabled:opacity-50 transition-all"
+                          >
+                            <Wind className="w-4 h-4 text-blue-500 mb-1" />
+                            <span className="text-[10px] font-black text-gray-800">{slime.stats.agility}</span>
+                          </button>
+                        </div>
+                        <div className="mt-2 text-center">
+                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">
+                            Next Upgrade: <span className="text-yellow-600">{SLIME_UPGRADE_COST(slime.level)} 💰</span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {state.slimes.length === 0 && (
+                      <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-gray-100">
+                        <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                        <p className="text-gray-400 text-sm">No slimes to experiment on!</p>
+                        <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Hatch eggs to begin research</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 bg-purple-500 h-full" />
+                      <Dna className="w-12 h-12 text-purple-400 mx-auto mb-3" />
+                      <h3 className="text-lg font-bold text-gray-800">Ancient Breeding</h3>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Create a powerful hybrid slime</p>
+                      
+                      <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex justify-between items-center mb-6">
+                        <div className="text-left">
+                          <p className="text-[10px] font-black text-purple-400 uppercase tracking-tighter">Genetic Fee</p>
+                          <p className="text-xl font-bold text-purple-600">500 💰</p>
+                        </div>
+                        <button 
+                          onClick={breedSlimes}
+                          disabled={breedingSelection.length !== 2 || state.coins < 500}
+                          className="px-6 py-3 bg-purple-500 text-white font-black text-xs uppercase rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none transition-all"
+                        >
+                          Start Breeding
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pb-24">
+                        {state.slimes.map(slime => {
+                          const isSelected = breedingSelection.includes(slime.id);
+                          return (
+                            <button 
+                              key={slime.id}
+                              onClick={() => toggleBreedingSelection(slime.id)}
+                              className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 relative ${
+                                isSelected 
+                                ? 'border-purple-500 bg-purple-50/50 shadow-md scale-105 z-10' 
+                                : 'border-gray-50 bg-white hover:border-purple-100'
+                              }`}
+                            >
+                              <div 
+                                className="w-12 h-12 rounded-full shadow-inner flex items-center justify-center relative"
+                                style={{ backgroundColor: slime.color }}
+                              >
+                                <div className="flex gap-1.5">
+                                  <div className="w-2 h-2 bg-white rounded-full relative" />
+                                  <div className="w-2 h-2 bg-white rounded-full relative" />
+                                </div>
+                              </div>
+                              <div className="text-center overflow-hidden w-full">
+                                <div className="text-[10px] font-bold text-gray-800 truncate">{slime.name}</div>
+                                <div className="text-[9px] font-black text-gray-400 uppercase">Lv.{slime.level}</div>
+                              </div>
+                              {isSelected && (
+                                <div className="absolute -top-2 -right-2 bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                                  {breedingSelection.indexOf(slime.id) + 1}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {state.slimes.length < 2 && (
+                        <div className="py-12 px-4 border-2 border-dashed border-gray-100 rounded-2xl">
+                          <p className="text-gray-400 text-xs font-medium">You need at least 2 slimes to research breeding!</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
       {/* Bottom Navigation */}
-      <div className="bg-white border-t p-2 flex justify-around items-center pb-8">
+      <div className="bg-white border-t p-2 flex justify-around items-center pb-8 z-50">
         <NavButton 
           active={state.activeTab === 'game'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
@@ -951,14 +1045,14 @@ export default function App() {
         />
         <NavButton 
           active={state.activeTab === 'slimes'} 
-          onClick={() => setState(s => ({ ...s, activeTab: 'slimes', activeSubTab: 'collection' }))}
+          onClick={() => setState(s => ({ ...s, activeTab: 'slimes' }))}
           icon={<Ghost />}
           hasNotification={hasSlimesNotification}
         />
         <NavButton 
           active={state.activeTab === 'market'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
-          icon={<TrendingUp />}
+          icon={<ShoppingBag />}
           hasNotification={hasMarketNotification}
         />
       </div>
@@ -1016,15 +1110,22 @@ function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: U
   );
 }
 
-const SlimeCard: React.FC<{ slime: Slime }> = ({ slime }) => {
+const SlimeCard: React.FC<{ 
+  slime: Slime; 
+  isEquipped: boolean; 
+  onEquip: (id: string) => void 
+}> = ({ slime, isEquipped, onEquip }) => {
+  const trait = TRAIT_EFFECTS[slime.trait];
   return (
     <motion.div 
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center"
+      className={`p-4 rounded-3xl shadow-sm border flex flex-col items-center transition-all ${
+        isEquipped ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-100'
+      }`}
     >
       <div 
-        className="w-16 h-16 rounded-full mb-3 shadow-inner relative overflow-hidden flex items-center justify-center" 
+        className="w-16 h-16 rounded-full mb-3 shadow-inner relative overflow-hidden flex items-center justify-center transform group-hover:scale-110 transition-transform" 
         style={{ backgroundColor: slime.color }}
       >
         {/* Cute Eyes */}
@@ -1037,15 +1138,31 @@ const SlimeCard: React.FC<{ slime: Slime }> = ({ slime }) => {
           </div>
         </div>
       </div>
-      <h4 className="font-bold text-gray-800 text-sm mb-1">{slime.name}</h4>
-      <div className="bg-gray-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-gray-500 mb-3">
+      <h4 className="font-bold text-gray-800 text-sm mb-1 flex items-center gap-1">
+        {slime.name}
+        {isEquipped && <Sparkles className="w-3 h-3 text-yellow-500" />}
+      </h4>
+      <div className="bg-gray-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-gray-500 mb-1">
         {slime.trait}
       </div>
-      <div className="w-full space-y-1">
+      <p className="text-[8px] text-gray-400 italic mb-3 text-center leading-tight h-5">
+        {trait.description}
+      </p>
+      <div className="w-full space-y-1 mb-3">
         <StatBar label="HP" value={slime.stats.health} max={30} color="bg-red-400" />
         <StatBar label="STR" value={slime.stats.strength} max={20} color="bg-orange-400" />
         <StatBar label="AGI" value={slime.stats.agility} max={20} color="bg-blue-400" />
       </div>
+      <button 
+        onClick={() => onEquip(slime.id)}
+        className={`w-full py-2 text-[10px] font-black uppercase rounded-xl transition-all ${
+          isEquipped 
+          ? 'bg-yellow-500 text-white shadow-lg' 
+          : 'bg-green-50 text-green-600 hover:bg-green-100'
+        }`}
+      >
+        {isEquipped ? 'Equipped' : 'Equip Slime'}
+      </button>
     </motion.div>
   );
 }

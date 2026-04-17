@@ -1,4 +1,10 @@
-export type SlimeTrait = 'Fast' | 'Strong' | 'Lucky' | 'Hardy' | 'Shiny';
+export type SlimeTrait = 
+  | 'Swift' | 'Fast' | 'Sonic' 
+  | 'Inspiring' | 'Motivating' 
+  | 'Magnetic' | 'Hypnotic' 
+  | 'Lucky' | 'Golden' 
+  | 'Haste' | 'Frenzy' 
+  | 'None';
 
 export interface SlimeStats {
   health: number;
@@ -41,6 +47,7 @@ export interface GameState {
 
   // Slimes
   slimes: Slime[];
+  equippedSlimeIds: string[];
   eggs: number;
   hatchingEgg: {
     progress: number;
@@ -65,6 +72,7 @@ export const INITIAL_STATE: GameState = {
     coinValue: 1,
   },
   slimes: [],
+  equippedSlimeIds: [],
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
