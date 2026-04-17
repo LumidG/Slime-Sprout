@@ -1082,66 +1082,126 @@ export default function App() {
               exit={{ x: -100, opacity: 0 }}
               className="h-full w-full flex flex-col overflow-hidden"
             >
-              <div className="flex-1 overflow-y-auto p-3 space-y-4 no-scrollbar">
-                <div className="bg-white p-4 rounded-[2rem] shadow-sm border-2 border-purple-100 text-center relative overflow-hidden">
-                  <Dna className="w-12 h-12 text-purple-400 mx-auto mb-2" />
-                  <h3 className="text-lg font-black text-gray-800 uppercase tracking-widest px-2">Breeding</h3>
-                  
-                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex justify-between items-center mb-6 mx-1 mt-3">
-                    <div className="text-left">
-                      <p className="text-[8px] font-black text-purple-400 uppercase leading-none mb-1">Fee</p>
-                      <p className="text-lg font-black text-purple-600">500 💰</p>
-                    </div>
-                    <button 
-                      onClick={breedSlimes}
-                      disabled={breedingSelection.length !== 2 || state.coins < 500}
-                      className="px-6 py-3 bg-purple-500 text-white font-black text-[9px] uppercase tracking-widest rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none hover:bg-purple-600 active:scale-95 transition-all"
-                    >
-                      Breed
-                    </button>
-                  </div>
+              {/* Header with Parent Slots */}
+              <div className="p-4 pt-6 text-center space-y-4 bg-white border-b border-purple-50">
+                <div className="flex flex-col items-center">
+                  <Dna className="w-10 h-10 text-purple-400 mb-1" />
+                  <h3 className="text-lg font-black text-gray-800 uppercase tracking-widest">Breeding</h3>
+                </div>
 
-                  <div className="grid grid-cols-3 gap-2 pb-8 px-1">
-                    {state.slimes.map(slime => {
-                      const isSelected = breedingSelection.includes(slime.id);
-                      return (
-                        <button 
-                          key={slime.id}
-                          onClick={() => toggleBreedingSelection(slime.id)}
-                          className={`p-2 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 relative overflow-hidden ${
-                            isSelected 
-                            ? 'border-purple-500 bg-purple-50 shadow-md scale-105 z-10' 
-                            : 'border-gray-50 bg-white hover:border-purple-200 shadow-sm'
-                          }`}
-                        >
-                          <div 
-                            className="w-10 h-10 rounded-full shadow-inner flex items-center justify-center relative"
-                            style={{ backgroundColor: slime.color }}
-                          >
-                            <div className="flex gap-1.5">
-                              <div className="w-2 h-2 bg-white rounded-full relative" />
-                              <div className="w-2 h-2 bg-white rounded-full relative" />
+                <div className="flex justify-center items-center gap-4 py-2">
+                  {[0, 1].map(index => {
+                    const selectedId = breedingSelection[index];
+                    const slime = state.slimes.find(s => s.id === selectedId);
+                    
+                    return (
+                      <div key={index} className="flex flex-col items-center gap-2">
+                        <div className={`w-16 h-16 rounded-3xl border-2 flex items-center justify-center transition-all ${
+                          slime ? 'border-purple-300 bg-purple-50 shadow-sm' : 'border-dashed border-gray-200 bg-gray-50'
+                        }`}>
+                          {slime ? (
+                            <div 
+                              className="w-10 h-10 rounded-full shadow-inner flex items-center justify-center relative"
+                              style={{ backgroundColor: slime.color }}
+                            >
+                              <div className="flex gap-1.5">
+                                <div className="w-2 h-2 bg-white rounded-full relative" />
+                                <div className="w-2 h-2 bg-white rounded-full relative" />
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-center w-full">
-                            <div className="text-[9px] font-black text-gray-800 truncate mb-0.5">{slime.name}</div>
-                            <div className="text-[7px] font-black text-purple-400 uppercase">Lv.{slime.level}</div>
-                          </div>
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 bg-purple-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black shadow-md">
-                              {breedingSelection.indexOf(slime.id) + 1}
-                            </div>
+                          ) : (
+                            <Plus className="w-6 h-6 text-gray-300" />
                           )}
-                        </button>
-                      );
-                    })}
+                        </div>
+                        <div className="text-[9px] font-black text-gray-400 uppercase tracking-tight">
+                          {slime ? slime.name : `Parent ${index + 1}`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-500">
+                    <Dna className="w-4 h-4" />
                   </div>
-                  {state.slimes.length < 2 && (
-                    <div className="py-12 px-4 border-2 border-dashed border-purple-100 rounded-[1.5rem] bg-purple-50/30 flex flex-col items-center gap-3">
-                      <Ghost className="w-8 h-8 text-purple-200" />
-                      <p className="text-purple-400 text-[10px] font-bold uppercase tracking-wider text-center">Need more slimes!</p>
-                    </div>
-                  )}
+                </div>
+              </div>
+
+              {/* Scrollable Selection List */}
+              <div className="flex-1 overflow-y-auto p-3 no-scrollbar pb-32">
+                <div className="grid grid-cols-3 gap-2">
+                  {state.slimes.map(slime => {
+                    const isSelected = breedingSelection.includes(slime.id);
+                    return (
+                      <button 
+                        key={slime.id}
+                        onClick={() => toggleBreedingSelection(slime.id)}
+                        className={`p-2 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-1.5 relative overflow-hidden ${
+                          isSelected 
+                          ? 'border-purple-500 bg-purple-200 shadow-md scale-105 z-10' 
+                          : 'border-gray-50 bg-white hover:border-purple-100 shadow-sm'
+                        }`}
+                      >
+                        <div 
+                          className="w-8 h-8 rounded-full shadow-inner flex items-center justify-center relative"
+                          style={{ backgroundColor: slime.color }}
+                        >
+                          <div className="flex gap-1">
+                            <div className="w-1.5 h-1.5 bg-white rounded-full relative" />
+                            <div className="w-1.5 h-1.5 bg-white rounded-full relative" />
+                          </div>
+                        </div>
+                        
+                        <div className="text-center w-full">
+                          <div className="text-[9px] font-black text-gray-800 truncate leading-none mb-1">{slime.name}</div>
+                          
+                          {/* Mini Stats Grid */}
+                          <div className="grid grid-cols-3 gap-0 mt-0.5">
+                            <div className="flex flex-col items-center">
+                              <Heart className="w-2 h-2 text-red-400" />
+                              <span className="text-[6px] font-black text-gray-500">{slime.stats.health}</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <Sword className="w-2 h-2 text-orange-400" />
+                              <span className="text-[6px] font-black text-gray-500">{slime.stats.strength}</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <Wind className="w-2 h-2 text-blue-400" />
+                              <span className="text-[6px] font-black text-gray-500">{slime.stats.agility}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="absolute top-1 right-1 bg-purple-500 text-white w-3 h-3 rounded-full flex items-center justify-center text-[7px] font-black shadow-md border border-white">
+                            {breedingSelection.indexOf(slime.id) + 1}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                {state.slimes.length < 2 && (
+                  <div className="py-12 px-4 border-2 border-dashed border-purple-100 rounded-[1.5rem] bg-purple-50/30 flex flex-col items-center gap-3">
+                    <Ghost className="w-8 h-8 text-purple-200" />
+                    <p className="text-purple-400 text-[10px] font-bold uppercase tracking-wider text-center">Need more slimes!</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Fixed Bottom Action Panel */}
+              <div className="p-4 bg-white/90 backdrop-blur-md border-t border-purple-100 absolute bottom-24 left-0 right-0 z-20">
+                <div className="max-w-md mx-auto flex justify-between items-center gap-4">
+                  <div className="bg-purple-50 px-4 py-2 rounded-2xl border border-purple-100 flex-1">
+                    <p className="text-[8px] font-black text-purple-400 uppercase leading-none mb-1 text-center">Research Fee</p>
+                    <p className="text-lg font-black text-purple-600 text-center">500 💰</p>
+                  </div>
+                  <button 
+                    onClick={breedSlimes}
+                    disabled={breedingSelection.length !== 2 || state.coins < 500}
+                    className="flex-[2] py-4 bg-purple-500 text-white font-black text-[11px] uppercase tracking-widest rounded-2xl shadow-xl disabled:opacity-50 disabled:shadow-none hover:bg-purple-600 active:scale-95 transition-all"
+                  >
+                    Breed Slimes
+                  </button>
                 </div>
               </div>
             </motion.div>
