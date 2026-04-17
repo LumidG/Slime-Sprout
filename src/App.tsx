@@ -1080,57 +1080,55 @@ export default function App() {
               initial={{ x: 100, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -100, opacity: 0 }}
-              className="h-full w-full flex flex-col overflow-hidden pb-24"
+              className="h-full w-full flex flex-col overflow-hidden"
             >
-              <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border-2 border-purple-100 text-center relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-2 bg-purple-500 h-full" />
-                  <Dna className="w-16 h-16 text-purple-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-black text-gray-800 uppercase tracking-widest px-2">Ancient Breeding</h3>
-                  <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest mb-8">Fuse two slimes into a powerful hybrid</p>
+              <div className="flex-1 overflow-y-auto p-3 space-y-4 no-scrollbar">
+                <div className="bg-white p-4 rounded-[2rem] shadow-sm border-2 border-purple-100 text-center relative overflow-hidden">
+                  <Dna className="w-12 h-12 text-purple-400 mx-auto mb-2" />
+                  <h3 className="text-lg font-black text-gray-800 uppercase tracking-widest px-2">Breeding</h3>
                   
-                  <div className="bg-purple-50 p-5 rounded-3xl border-2 border-purple-100 flex justify-between items-center mb-8 mx-2">
+                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex justify-between items-center mb-6 mx-1 mt-3">
                     <div className="text-left">
-                      <p className="text-[10px] font-black text-purple-400 uppercase">Research Fee</p>
-                      <p className="text-2xl font-black text-purple-600">500 💰</p>
+                      <p className="text-[8px] font-black text-purple-400 uppercase leading-none mb-1">Fee</p>
+                      <p className="text-lg font-black text-purple-600">500 💰</p>
                     </div>
                     <button 
                       onClick={breedSlimes}
                       disabled={breedingSelection.length !== 2 || state.coins < 500}
-                      className="px-8 py-4 bg-purple-500 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl shadow-xl disabled:opacity-50 disabled:shadow-none hover:bg-purple-600 active:scale-95 transition-all"
+                      className="px-6 py-3 bg-purple-500 text-white font-black text-[9px] uppercase tracking-widest rounded-xl shadow-lg disabled:opacity-50 disabled:shadow-none hover:bg-purple-600 active:scale-95 transition-all"
                     >
-                      Fuse Slimes
+                      Breed
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 pb-12 px-2">
+                  <div className="grid grid-cols-3 gap-2 pb-8 px-1">
                     {state.slimes.map(slime => {
                       const isSelected = breedingSelection.includes(slime.id);
                       return (
                         <button 
                           key={slime.id}
                           onClick={() => toggleBreedingSelection(slime.id)}
-                          className={`p-4 rounded-3xl border-2 transition-all flex flex-col items-center gap-3 relative overflow-hidden ${
+                          className={`p-2 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 relative overflow-hidden ${
                             isSelected 
-                            ? 'border-purple-500 bg-purple-50 shadow-lg scale-105 z-10' 
+                            ? 'border-purple-500 bg-purple-50 shadow-md scale-105 z-10' 
                             : 'border-gray-50 bg-white hover:border-purple-200 shadow-sm'
                           }`}
                         >
                           <div 
-                            className="w-14 h-14 rounded-full shadow-inner flex items-center justify-center relative"
+                            className="w-10 h-10 rounded-full shadow-inner flex items-center justify-center relative"
                             style={{ backgroundColor: slime.color }}
                           >
-                            <div className="flex gap-2">
-                              <div className="w-2.5 h-2.5 bg-white rounded-full relative" />
-                              <div className="w-2.5 h-2.5 bg-white rounded-full relative" />
+                            <div className="flex gap-1.5">
+                              <div className="w-2 h-2 bg-white rounded-full relative" />
+                              <div className="w-2 h-2 bg-white rounded-full relative" />
                             </div>
                           </div>
                           <div className="text-center w-full">
-                            <div className="text-xs font-black text-gray-800 truncate mb-1">{slime.name}</div>
-                            <div className="text-[9px] font-black text-purple-400 uppercase">Lv.{slime.level}</div>
+                            <div className="text-[9px] font-black text-gray-800 truncate mb-0.5">{slime.name}</div>
+                            <div className="text-[7px] font-black text-purple-400 uppercase">Lv.{slime.level}</div>
                           </div>
                           {isSelected && (
-                            <div className="absolute top-2 right-2 bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                            <div className="absolute top-1 right-1 bg-purple-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black shadow-md">
                               {breedingSelection.indexOf(slime.id) + 1}
                             </div>
                           )}
@@ -1139,9 +1137,9 @@ export default function App() {
                     })}
                   </div>
                   {state.slimes.length < 2 && (
-                    <div className="py-16 px-6 border-2 border-dashed border-purple-100 rounded-[2rem] bg-purple-50/30 flex flex-col items-center gap-4">
-                      <Ghost className="w-12 h-12 text-purple-200" />
-                      <p className="text-purple-400 text-xs font-bold uppercase tracking-wider text-center">You need more slimes to begin research!</p>
+                    <div className="py-12 px-4 border-2 border-dashed border-purple-100 rounded-[1.5rem] bg-purple-50/30 flex flex-col items-center gap-3">
+                      <Ghost className="w-8 h-8 text-purple-200" />
+                      <p className="text-purple-400 text-[10px] font-bold uppercase tracking-wider text-center">Need more slimes!</p>
                     </div>
                   )}
                 </div>
