@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
-  /* Single full-viewport shell: no document scrollbars; panels scroll internally. */
+  /* Single full-viewport shell: no document scrollbars; panels scroll internally.
+     min-height: 100dvh keeps the shell aligned with the visible viewport on mobile
+     (address bar / dynamic toolbars); height: 100% preserves desktop behavior. */
   html {
     height: 100%;
+    min-height: 100dvh;
     width: 100%;
     max-width: 100%;
     overflow: hidden;
@@ -12,11 +15,14 @@
   body {
     @apply m-0 min-h-0 w-full max-w-full select-none overflow-hidden bg-white;
     height: 100%;
+    min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
   }
 
   #root {
-    @apply flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden;
+    @apply flex min-h-0 w-full max-w-full flex-col overflow-hidden;
+    min-height: 100dvh;
+    height: 100%;
   }
 }
 
@@ -27,5 +33,23 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Bottom nav: keep tap targets above home indicator / gesture bar */
+  .pb-nav-safe {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .pt-header-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  }
+
+  /* Game tab: floating HUD clears the glass header / bottom tab bar */
+  .game-hud-upgrade {
+    top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+  }
+
+  .game-upgrades-sheet {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 5.75rem);
   }
 }

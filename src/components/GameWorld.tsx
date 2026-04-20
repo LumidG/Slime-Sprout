@@ -82,6 +82,12 @@ export const GameWorld: React.FC<GameWorldProps> = ({
           canvasRef.current.width = width;
           canvasRef.current.height = height;
         }
+
+        const r = playerRef.current.radius;
+        if (width > r * 2 && height > r * 2) {
+          playerRef.current.x = Math.max(r, Math.min(width - r, playerRef.current.x));
+          playerRef.current.y = Math.max(r, Math.min(height - r, playerRef.current.y));
+        }
         
         // Remove coins that are now out of bounds
         const margin = 40;
@@ -749,7 +755,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   });
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden" style={{ backgroundColor: '#86EFAC' }}>
+    <div ref={containerRef} className="relative h-full min-h-0 w-full overflow-hidden" style={{ backgroundColor: '#86EFAC' }}>
       <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}

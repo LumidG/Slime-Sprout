@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, 
@@ -39,6 +39,8 @@ import {
   TRAIT_EFFECTS,
   MAX_EQUIPPED_SLIMES
 } from './constants';
+import { Capacitor } from '@capacitor/core';
+import { SystemUi } from './systemUi';
 
 export default function App() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
@@ -83,6 +85,13 @@ export default function App() {
   const hasMarketNotification = canAffordEgg || canAffordAnyGameUpgrade || canAffordAnySlimeUpgrade || canAffordBreeding;
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
+  const isGameTab = state.activeTab === 'game';
+
+  // Android: keep status + navigation bars hidden on every tab; re-apply on tab change in case the OS restores them.
+  useLayoutEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    void SystemUi.setImmersive({ hide: true }).catch(() => {});
+  }, [state.activeTab]);
 
   // Load state
   useEffect(() => {
@@ -416,7 +425,7 @@ export default function App() {
 
   if (isLoading && loadingProgress < 100) {
     return (
-      <div className="flex h-full min-h-0 w-full flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
+      <div className="flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
         <motion.h1 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -439,7 +448,7 @@ export default function App() {
   if (!hasStarted) {
     return (
       <div 
-        className="flex h-full min-h-0 w-full flex-col items-center justify-center p-8 cursor-pointer select-none"
+        className="flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 cursor-pointer select-none"
         style={{ backgroundColor: '#86EFAC' }}
         onClick={() => setHasStarted(true)}
       >
@@ -462,7 +471,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-white relative select-none">
+    <div
+      className={`flex h-full min-h-[100dvh] w-full flex-col overflow-hidden relative select-none ${isGameTab ? 'bg-[#86EFAC]' : 'bg-white'}`}
+    >
       {/* Onboarding Overlay */}
       <AnimatePresence>
         {!state.hasCompletedOnboarding && hasStarted && (
@@ -519,12 +530,18 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Header Stats — currency centered on screen; debug mirrored in side column for balance */}
-      <div className="z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b bg-white/80 px-2 py-3 backdrop-blur-md">
+      {/* Header Stats — overlays full-screen game; normal flow on other tabs */}
+      <div
+        className={
+          isGameTab
+            ? 'pointer-events-none absolute top-0 left-0 right-0 z-30 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b border-white/10 bg-white/40 px-2 pt-header-safe pb-3 backdrop-blur-md'
+            : 'relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b bg-white/80 px-2 pt-header-safe pb-3 backdrop-blur-md'
+        }
+      >
         <button
           type="button"
           onClick={() => setIsDebugOpen(true)}
-          className="justify-self-start p-2 text-gray-300 transition-colors hover:text-red-400"
+          className="pointer-events-auto justify-self-start p-2 text-gray-300 transition-colors hover:text-red-400"
           aria-label="Debug menu"
         >
           <Bug className="h-4 w-4" />
@@ -795,8 +812,8 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Main Content Area */}
-      <div className="min-h-0 flex-1 relative overflow-hidden bg-gray-50">
+      {/* Main Content Area — game fills viewport under floating chrome */}
+      <div className={`min-h-0 flex-1 relative overflow-hidden ${isGameTab ? 'bg-transparent' : 'bg-gray-50'}`}>
         <AnimatePresence mode="wait">
           {state.activeTab === 'game' && (
             <motion.div 
@@ -804,7 +821,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="relative h-full min-h-0 w-full"
+              className="absolute inset-0 h-full min-h-0 w-full"
             >
               <GameWorld 
                 onCollect={addCoins}
@@ -817,7 +834,7 @@ export default function App() {
               {/* Upgrades Toggle Button */}
               <button 
                 onClick={() => setIsUpgradesOpen(!isUpgradesOpen)}
-                className="absolute top-4 right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50 z-20 text-green-600 hover:scale-110 transition-transform"
+                className="game-hud-upgrade absolute right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50 z-20 text-green-600 hover:scale-110 transition-transform"
               >
                 <TrendingUp className={`w-6 h-6 transition-transform ${isUpgradesOpen ? 'rotate-180' : ''}`} />
                 {canAffordAnyGameUpgrade && (
@@ -832,7 +849,7 @@ export default function App() {
                     initial={{ y: 300, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     exit={{ y: 300, opacity: 0 }}
-                    className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-white/50 z-20"
+                    className="game-upgrades-sheet absolute left-4 right-4 bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-white/50 z-20"
                   >
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -1208,8 +1225,14 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation */}
-      <div className="bg-white border-t p-2 flex justify-around items-center pb-8 z-50">
+      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market */}
+      <div
+        className={
+          isGameTab
+            ? 'pointer-events-none absolute bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-white/15 bg-white/45 p-2 pb-nav-safe backdrop-blur-md'
+            : 'relative z-50 flex justify-around items-center border-t bg-white p-2 pb-nav-safe'
+        }
+      >
         <NavButton 
           active={state.activeTab === 'game'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
@@ -1235,8 +1258,9 @@ export default function App() {
 function NavButton({ active, onClick, icon, hasNotification }: { active: boolean, onClick: () => void, icon: React.ReactNode, hasNotification?: boolean }) {
   return (
     <button 
+      type="button"
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all relative ${active ? 'text-green-600' : 'text-gray-400'}`}
+      className={`pointer-events-auto flex flex-col items-center gap-1 p-2 rounded-2xl transition-all relative ${active ? 'text-green-600' : 'text-gray-400'}`}
     >
       <div className={`p-2 rounded-xl transition-all ${active ? 'bg-green-100' : ''}`}>
         {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
