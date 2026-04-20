@@ -22,7 +22,14 @@ import {
   PartyPopper,
   Plus,
   CircleDollarSign,
-  MessageCircle
+  MessageCircle,
+  MoreVertical,
+  Volume2,
+  VolumeX,
+  Star,
+  Mail,
+  X,
+  Music
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
@@ -37,10 +44,13 @@ import {
   COIN_CAP,
   SLIME_NAMES,
   TRAIT_EFFECTS,
-  MAX_EQUIPPED_SLIMES
+  MAX_EQUIPPED_SLIMES,
+  PLAY_STORE_LISTING_URL,
+  SUPPORT_MAILTO
 } from './constants';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
+import { useBlossomMusic } from './hooks/useBlossomMusic';
 
 export default function App() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
@@ -52,12 +62,15 @@ export default function App() {
   const [selectedSlimeDetail, setSelectedSlimeDetail] = useState<Slime | null>(null);
   const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
 
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
     "Upgrade your slimes or breed them to create powerful hybrids!",
     "Let's start collecting. Have fun!"
   ];
+
+  useBlossomMusic(hasStarted, state.settings.musicEnabled, state.settings.musicVolume);
 
   const completeOnboarding = () => {
     setState(prev => ({ ...prev, hasCompletedOnboarding: true }));
@@ -109,6 +122,29 @@ export default function App() {
         const coinValue = Math.pow(2, parsed.upgrades.coinValue - 1);
         parsed.coins += idleCoins * coinValue;
         parsed.totalCoinsCollected += idleCoins;
+      }
+
+      const s = parsed.settings;
+      const clampVol = (v: unknown) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+      };
+      if (s && 'soundVolume' in s && !('musicVolume' in s)) {
+        const legacyVol = clampVol(s.soundVolume);
+        const legacyOn = Boolean((s as { soundEnabled?: boolean }).soundEnabled ?? true);
+        parsed.settings = {
+          musicEnabled: legacyOn,
+          musicVolume: legacyVol,
+          sfxEnabled: legacyOn,
+          sfxVolume: legacyVol,
+        };
+      } else {
+        parsed.settings = {
+          musicEnabled: Boolean(s?.musicEnabled ?? true),
+          musicVolume: clampVol(s?.musicVolume),
+          sfxEnabled: Boolean(s?.sfxEnabled ?? true),
+          sfxVolume: clampVol(s?.sfxVolume),
+        };
       }
       
       setState({ ...parsed, lastSavedTime: now });
@@ -480,7 +516,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] flex items-end justify-center bg-emerald-950/35 p-6 pb-24 backdrop-blur-sm"
+            className="absolute inset-0 z-[200] flex items-end justify-center bg-black/50 p-6 pb-24 backdrop-blur-sm"
           >
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
@@ -552,8 +588,173 @@ export default function App() {
           </div>
           <span className="text-xl font-bold tabular-nums text-emerald-950">{state.coins.toLocaleString()}</span>
         </div>
-        <div aria-hidden="true" />
+        <button
+          type="button"
+          onClick={() => setIsOptionsOpen(true)}
+          className="pointer-events-auto justify-self-end rounded-xl p-2 text-emerald-900/70 transition-colors hover:bg-white/40 hover:text-orange-600"
+          aria-label="Options"
+          aria-haspopup="dialog"
+          aria-expanded={isOptionsOpen}
+        >
+          <MoreVertical className="h-5 w-5" />
+        </button>
       </div>
+
+      {/* Options — centered modal */}
+      <AnimatePresence>
+        {isOptionsOpen && (
+          <motion.div
+            key="options-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[101] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
+            onClick={() => setIsOptionsOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="options-title"
+              className="relative w-full max-w-xs overflow-hidden rounded-3xl border border-emerald-100/90 bg-gradient-to-b from-white to-orange-50/40 p-6 pt-7 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/70"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-orange-400" />
+              <div className="relative mb-5 min-h-[2.25rem]">
+                <h2
+                  id="options-title"
+                  className="flex items-center justify-center gap-2 pr-10 text-center text-xl font-black text-gray-800"
+                >
+                  <Settings className="h-5 w-5 shrink-0 text-orange-500" aria-hidden />
+                  Options
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsOpen(false)}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+                  aria-label="Close options"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">Music</p>
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      settings: { ...s.settings, musicEnabled: !s.settings.musicEnabled },
+                    }))
+                  }
+                  className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm"
+                  aria-label={state.settings.musicEnabled ? 'Mute music' : 'Unmute music'}
+                >
+                  {state.settings.musicEnabled ? (
+                    <Music className="h-4 w-4" />
+                  ) : (
+                    <VolumeX className="h-4 w-4" />
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <label className="sr-only" htmlFor="music-volume">
+                    Music volume
+                  </label>
+                  <input
+                    id="music-volume"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(state.settings.musicVolume * 100)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100;
+                      setState((s) => ({
+                        ...s,
+                        settings: { ...s.settings, musicVolume: v },
+                      }));
+                    }}
+                    className="h-2 w-full cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!state.settings.musicEnabled}
+                  />
+                </div>
+              </div>
+
+              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">
+                Sound effects
+              </p>
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      settings: { ...s.settings, sfxEnabled: !s.settings.sfxEnabled },
+                    }))
+                  }
+                  className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm"
+                  aria-label={state.settings.sfxEnabled ? 'Mute sound effects' : 'Unmute sound effects'}
+                >
+                  {state.settings.sfxEnabled ? (
+                    <Volume2 className="h-4 w-4" />
+                  ) : (
+                    <VolumeX className="h-4 w-4" />
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <label className="sr-only" htmlFor="sfx-volume">
+                    Sound effects volume
+                  </label>
+                  <input
+                    id="sfx-volume"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(state.settings.sfxVolume * 100)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100;
+                      setState((s) => ({
+                        ...s,
+                        settings: { ...s.settings, sfxVolume: v },
+                      }));
+                    }}
+                    className="h-2 w-full cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!state.settings.sfxEnabled}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOptionsOpen(false);
+                    window.open(PLAY_STORE_LISTING_URL, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                >
+                  <Star className="h-4 w-4 shrink-0 text-amber-500" />
+                  Rate the game
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOptionsOpen(false);
+                    window.location.href = SUPPORT_MAILTO;
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                >
+                  <Mail className="h-4 w-4 shrink-0 text-emerald-600" />
+                  Contact support
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hatching Celebration Overlay */}
       <AnimatePresence>
@@ -631,7 +832,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[100] flex items-center justify-center bg-emerald-950/50 p-6 backdrop-blur-sm"
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
@@ -704,7 +905,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[150] flex items-center justify-center bg-emerald-950/45 p-6 backdrop-blur-sm"
+            className="absolute inset-0 z-[150] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
             onClick={() => setSelectedSlimeDetail(null)}
           >
             <motion.div 
@@ -764,7 +965,7 @@ export default function App() {
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'health')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}
-                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-red-50 p-2 py-4 shadow-sm transition-all hover:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-red-100"
+                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-red-100 bg-red-50 p-2 py-4 shadow-sm transition-all hover:border-red-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
                           <div className="mb-2 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
                           <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</div>
@@ -774,7 +975,7 @@ export default function App() {
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'strength')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}
-                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-orange-50 p-2 py-4 shadow-sm transition-all hover:border-orange-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-orange-100"
+                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-orange-100 bg-orange-50 p-2 py-4 shadow-sm transition-all hover:border-orange-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
                           <div className="mb-2 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
                           <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</div>
@@ -784,7 +985,7 @@ export default function App() {
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'agility')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}
-                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-blue-50 p-2 py-4 shadow-sm transition-all hover:border-blue-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-blue-100"
+                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-blue-100 bg-blue-50 p-2 py-4 shadow-sm transition-all hover:border-blue-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
                           <div className="mb-2 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
                           <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</div>
@@ -1040,7 +1241,7 @@ export default function App() {
                     <button 
                       onClick={() => buyEgg(1)}
                       disabled={state.coins < EGG_COST}
-                      className="group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-amber-200 bg-white py-2 font-black text-amber-900 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-50/50 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-600"
+                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-amber-200 bg-white py-2 font-black text-amber-900 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-50/50 disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-600"
                     >
                       <span className="text-[8px] uppercase text-amber-700/90 group-disabled:text-zinc-500">Buy 1</span>
                       <span className="text-[10px] font-black group-disabled:text-zinc-700">{EGG_COST} 💰</span>
@@ -1048,7 +1249,7 @@ export default function App() {
                     <button 
                       onClick={() => buyEgg(10)}
                       disabled={state.coins < EGG_COST * 10}
-                      className="group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900"
+                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
                       <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 10</span>
                       <span className="text-[10px] font-black group-disabled:text-zinc-900">{EGG_COST * 10} 💰</span>
@@ -1213,7 +1414,7 @@ export default function App() {
                     type="button"
                     onClick={breedSlimes}
                     disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                    className="group flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-3 text-white shadow-xl shadow-emerald-900/20 transition-all hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:from-zinc-400 disabled:via-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
+                    className="ui-afford-disabled group flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-3 text-white shadow-xl shadow-emerald-900/20 transition-all hover:brightness-105 active:scale-[0.98] disabled:from-zinc-400 disabled:via-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
                   >
                     <span className="text-[11px] font-black uppercase tracking-widest group-disabled:text-zinc-100">Breed Slimes</span>
                     <span className="text-sm font-black tabular-nums text-emerald-50 group-disabled:text-zinc-200">
@@ -1291,12 +1492,10 @@ function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: U
       onClick={onClick}
       disabled={lockedOut}
       className={`flex flex-col gap-1 rounded-xl border p-3 transition-all ${
-        maxed
-          ? 'cursor-default border-zinc-200 bg-zinc-100'
-          : canAfford
-            ? 'border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 hover:border-orange-300'
-            : 'cursor-not-allowed border-zinc-200 bg-zinc-100'
-      }`}
+        lockedOut
+          ? 'ui-afford-disabled border-zinc-200 bg-zinc-100'
+          : 'border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 hover:border-orange-300'
+      } ${maxed && lockedOut ? 'disabled:cursor-default' : ''}`}
     >
       <div className="flex w-full items-center justify-between">
         <div className={canAfford && !maxed ? 'text-emerald-600' : 'text-zinc-500'}>{icon}</div>

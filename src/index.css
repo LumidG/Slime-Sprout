@@ -96,4 +96,9 @@
   .btn-primary-glow {
     @apply bg-gradient-to-r from-emerald-500 to-teal-600 font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:shadow-emerald-500/35 active:scale-[0.98];
   }
+
+  /* Put `ui-afford-disabled` on buttons; greys out only when [disabled] */
+  .ui-afford-disabled:disabled {
+    @apply cursor-not-allowed grayscale-[0.55] brightness-[0.96] contrast-95;
+  }
 }

@@ -1,5 +1,13 @@
 import { SlimeTrait } from './types';
 
+/** Google Play listing (same id as `capacitor.config.ts` appId). */
+export const PLAY_STORE_LISTING_URL =
+  'https://play.google.com/store/apps/details?id=com.nightskygames.slimesprout';
+
+/** Update to your real support address. */
+export const SUPPORT_MAILTO =
+  'mailto:support@nightskygames.com?subject=' + encodeURIComponent('Slime Sprout support');
+
 export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
 

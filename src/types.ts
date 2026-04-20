@@ -60,6 +60,16 @@ export interface GameState {
   activeTab: 'game' | 'slimes' | 'market';
   activeSubTab: string;
   hasCompletedOnboarding: boolean;
+
+  /** App preferences (persisted). Used when game audio is wired up. */
+  settings: {
+    musicEnabled: boolean;
+    /** Music volume 0–1 when music is enabled. */
+    musicVolume: number;
+    sfxEnabled: boolean;
+    /** Sound effects volume 0–1 when SFX are enabled. */
+    sfxVolume: number;
+  };
 }
 
 export const INITIAL_STATE: GameState = {
@@ -80,4 +90,10 @@ export const INITIAL_STATE: GameState = {
   activeTab: 'game',
   activeSubTab: 'collect',
   hasCompletedOnboarding: false,
+  settings: {
+    musicEnabled: true,
+    musicVolume: 1,
+    sfxEnabled: true,
+    sfxVolume: 1,
+  },
 };
