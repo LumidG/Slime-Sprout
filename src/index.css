@@ -44,23 +44,38 @@
     padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   }
 
-  /* Game tab: floating HUD clears the glass header / bottom tab bar */
+  /*
+   * Game tab: world name chip below `glass-header-game` (pt-header-safe + icon row ~2.25rem + pb-3).
+   * Do not use a fixed `top-*`; it overlaps the header when safe-area-inset-top is large.
+   */
+  .top-game-world-label {
+    top: calc(max(0.75rem, env(safe-area-inset-top, 0px)) + 2.25rem + 0.75rem + 0.25rem);
+  }
+
+  /*
+   * Upgrades FAB + sheet: clear the floating nav (glass-nav-game: p-2 + tab row ~4.25rem + pb-nav-safe).
+   * Use the same max(2rem, safe-area) as .pb-nav-safe so we never overlap when inset is 0 on desktop/web.
+   * Extra 0.5rem keeps shadow below the button off the nav glass.
+   */
   .game-hud-upgrade {
-    top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+    bottom: calc(max(2rem, env(safe-area-inset-bottom, 0px)) + 4.75rem + 0.5rem);
   }
 
   .game-upgrades-sheet {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 5.75rem);
+    bottom: calc(max(2rem, env(safe-area-inset-bottom, 0px)) + 4.75rem + 0.5rem);
   }
 
-  /* App theme: mint garden + warm orange accent (complementary) */
+  /*
+   * Game shell: neutral stone (not Grass Fields / any one world).
+   * During tab transitions the playfield layer can briefly composite over this;
+   * if it matched world 0, later areas felt like they flashed the first level.
+   */
   .bg-app-game {
     background: linear-gradient(
       155deg,
-      #6ee7b7 0%,
-      #86efac 38%,
-      #a7f3d0 72%,
-      #fde68a 100%
+      #fafaf9 0%,
+      #f4f4f5 42%,
+      #e4e4e7 100%
     );
   }
 
@@ -77,8 +92,17 @@
     background: linear-gradient(180deg, #ecfdf5 0%, #fff7ed 42%, #fafaf9 100%);
   }
 
+  /* Subtle green outline — matches upgrades sheet / game HUD chrome */
+  .ui-emerald-outline {
+    @apply border border-emerald-200/70 ring-1 ring-emerald-400/25;
+  }
+
+  .ui-emerald-outline-soft {
+    @apply border border-emerald-200/55 ring-1 ring-emerald-300/20;
+  }
+
   .glass-header-game {
-    @apply border-b border-white/25 bg-gradient-to-r from-white/45 via-emerald-100/35 to-amber-100/40 backdrop-blur-md;
+    @apply border-b border-emerald-200/45 bg-gradient-to-r from-white/45 via-emerald-100/35 to-amber-100/40 backdrop-blur-md;
   }
 
   .glass-header-page {
@@ -86,7 +110,7 @@
   }
 
   .glass-nav-game {
-    @apply border-t border-white/25 bg-gradient-to-r from-white/50 via-emerald-50/40 to-amber-100/35 backdrop-blur-md;
+    @apply border-t border-emerald-200/45 bg-gradient-to-r from-white/50 via-emerald-50/40 to-amber-100/35 backdrop-blur-md;
   }
 
   .glass-nav-page {

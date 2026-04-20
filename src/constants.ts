@@ -12,6 +12,23 @@ export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
 
 export const COIN_CAP = 15;
+
+/**
+ * Coin centers are kept inside this rectangle so they stay visible and tappable
+ * under floating header / nav / world chrome. The canvas is full-viewport; UI overlays it.
+ */
+export const COIN_SPAWN_INSETS = {
+  /** Header (safe area + stats row) + world name chip */
+  top: 104,
+  /** Bottom tab bar + home indicator / safe area */
+  bottom: 120,
+  /** Default horizontal pad; narrow when world chevrons are hidden (see GameWorld props) */
+  left: 20,
+  right: 20,
+} as const;
+
+export const COIN_SPAWN_INSET_X_WITH_WORLD_NAV = 52;
+
 export const BASE_RESPAWN_TIME = 3000; // ms
 export const BASE_MOVEMENT_SPEED = 1.5;
 
@@ -66,6 +83,114 @@ export const UPGRADE_COSTS = {
   respawnTime: (level: number) => Math.floor(15 * Math.pow(1.6, level)),
   coinValue: (level: number) => Math.floor(20 * Math.pow(2, level)),
 };
+
+/** Caps for shop upgrades on the game tab (automation is 0/1). */
+export const MAX_GAME_UPGRADE_LEVEL = {
+  movementSpeed: 10,
+  respawnTime: 10,
+  coinValue: 10,
+} as const;
+
+export type GameUpgradeSnapshot = {
+  automation: number;
+  movementSpeed: number;
+  respawnTime: number;
+  coinValue: number;
+};
+
+export function isGameUpgradeMaxed(
+  upgrades: GameUpgradeSnapshot,
+  key: keyof GameUpgradeSnapshot
+): boolean {
+  if (key === 'automation') return upgrades.automation > 0;
+  return upgrades[key] >= MAX_GAME_UPGRADE_LEVEL[key];
+}
+
+export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot): boolean {
+  return (
+    upgrades.automation > 0 &&
+    upgrades.movementSpeed >= MAX_GAME_UPGRADE_LEVEL.movementSpeed &&
+    upgrades.respawnTime >= MAX_GAME_UPGRADE_LEVEL.respawnTime &&
+    upgrades.coinValue >= MAX_GAME_UPGRADE_LEVEL.coinValue
+  );
+}
+
+export type GameWorldDecoration = 'grass' | 'flowers' | 'reeds' | 'sand' | 'snow' | 'mist';
+
+export type GameWorldTheme = {
+  name: string;
+  /** Three color stops for the playfield diagonal gradient */
+  gradient: [string, string, string];
+  accentStroke: string;
+  decoration: GameWorldDecoration;
+};
+
+/** Playfield worlds (index 0–5). Unlock the next index by maxing all game upgrades. */
+export const GAME_WORLDS: readonly GameWorldTheme[] = [
+  {
+    name: 'Grass Fields',
+    gradient: ['#6ee7b7', '#86efac', '#fde68a'],
+    accentStroke: '#34d399',
+    decoration: 'grass',
+  },
+  {
+    name: 'Scorching Dunes',
+    gradient: ['#fdba74', '#f97316', '#fde68a'],
+    accentStroke: '#ea580c',
+    decoration: 'sand',
+  },
+  {
+    name: 'Floral Slope',
+    gradient: ['#fbcfe8', '#e9d5ff', '#fef3c7'],
+    accentStroke: '#ec4899',
+    decoration: 'flowers',
+  },
+  {
+    name: 'Soggy Swamps',
+    gradient: ['#115e59', '#0d9488', '#134e4a'],
+    accentStroke: '#5eead4',
+    decoration: 'reeds',
+  },
+  {
+    name: 'Snowy Peak',
+    gradient: ['#e0f2fe', '#bae6fd', '#f0f9ff'],
+    accentStroke: '#7dd3fc',
+    decoration: 'snow',
+  },
+  {
+    name: 'Milky Fog',
+    gradient: ['#e4e4e7', '#d4d4d8', '#fafafa'],
+    accentStroke: '#a1a1aa',
+    decoration: 'mist',
+  },
+] as const;
+
+/**
+ * Maps a saved world index from before Scorching Dunes was moved to slot 2 (third in line).
+ * Old: …, Swamps, Dunes, … → New: …, Dunes, Swamps, …
+ */
+export const GAME_WORLD_INDEX_MIGRATE_SAND_THIRD: readonly number[] = [0, 1, 3, 2, 4, 5];
+
+export function migrateMaxUnlockedToSandThirdOrder(oldMax: number): number {
+  const cap = Math.min(5, Math.max(0, Math.floor(oldMax)));
+  let maxNew = 0;
+  for (let i = 0; i <= cap; i++) {
+    maxNew = Math.max(maxNew, GAME_WORLD_INDEX_MIGRATE_SAND_THIRD[i] ?? i);
+  }
+  return Math.min(5, maxNew);
+}
+
+/** After sand-third order: swap indices 1 ↔ 2 so Dunes (sand) is before Floral. */
+export const GAME_WORLD_INDEX_MIGRATE_SAND_FLOWER_SWAP: readonly number[] = [0, 2, 1, 3, 4, 5];
+
+export function migrateMaxUnlockedToSandFlowerOrder(oldMax: number): number {
+  const cap = Math.min(5, Math.max(0, Math.floor(oldMax)));
+  let maxNew = 0;
+  for (let i = 0; i <= cap; i++) {
+    maxNew = Math.max(maxNew, GAME_WORLD_INDEX_MIGRATE_SAND_FLOWER_SWAP[i] ?? i);
+  }
+  return Math.min(5, maxNew);
+}
 
 export const EGG_COST = 100;
 

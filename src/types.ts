@@ -61,6 +61,23 @@ export interface GameState {
   activeSubTab: string;
   hasCompletedOnboarding: boolean;
 
+  /** Selected playfield (0–5). Must be ≤ maxUnlockedGameWorld. */
+  gameWorldIndex: number;
+  /** Highest world index the player can open (0–5). Next unlocks when all game upgrades are maxed. */
+  maxUnlockedGameWorld: number;
+
+  /**
+   * True once `gameWorldIndex` / `maxUnlockedGameWorld` use the order where Scorching Dunes is third.
+   * Absent on older saves triggers a one-time remap on load.
+   */
+  worldOrderSandThird?: boolean;
+
+  /**
+   * True once indices use the order where Scorching Dunes (sand) is before Floral Slope.
+   * Absent on older saves triggers a one-time remap on load.
+   */
+  worldOrderSandFlowerSwap?: boolean;
+
   /** App preferences (persisted). Used when game audio is wired up. */
   settings: {
     musicEnabled: boolean;
@@ -90,6 +107,10 @@ export const INITIAL_STATE: GameState = {
   activeTab: 'game',
   activeSubTab: 'collect',
   hasCompletedOnboarding: false,
+  gameWorldIndex: 0,
+  maxUnlockedGameWorld: 0,
+  worldOrderSandThird: true,
+  worldOrderSandFlowerSwap: true,
   settings: {
     musicEnabled: true,
     musicVolume: 1,

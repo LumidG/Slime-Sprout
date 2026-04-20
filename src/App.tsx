@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, 
@@ -8,6 +8,7 @@ import {
   TrendingUp, 
   Package, 
   ChevronRight,
+  ChevronLeft,
   Zap,
   Timer,
   Coins,
@@ -46,11 +47,20 @@ import {
   TRAIT_EFFECTS,
   MAX_EQUIPPED_SLIMES,
   PLAY_STORE_LISTING_URL,
-  SUPPORT_MAILTO
+  SUPPORT_MAILTO,
+  GAME_WORLDS,
+  GAME_WORLD_INDEX_MIGRATE_SAND_THIRD,
+  migrateMaxUnlockedToSandThirdOrder,
+  GAME_WORLD_INDEX_MIGRATE_SAND_FLOWER_SWAP,
+  migrateMaxUnlockedToSandFlowerOrder,
+  MAX_GAME_UPGRADE_LEVEL,
+  areAllGameUpgradesMaxed,
+  isGameUpgradeMaxed
 } from './constants';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
 import { useBlossomMusic } from './hooks/useBlossomMusic';
+import { useCoinCollectSfx } from './hooks/useCoinCollectSfx';
 
 export default function App() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
@@ -63,6 +73,10 @@ export default function App() {
   const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  /** Short GPU translate when changing world; avoids remounting GameWorld (was causing heavy lag). */
+  const [worldNavShiftPx, setWorldNavShiftPx] = useState(0);
+  const [worldNavTransition, setWorldNavTransition] = useState(true);
+  const gameUpgradeMaxedUnlockRef = useRef(false);
 
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
@@ -71,6 +85,13 @@ export default function App() {
   ];
 
   useBlossomMusic(hasStarted, state.settings.musicEnabled, state.settings.musicVolume);
+
+  // Fake loading hides when progress hits 100%, but we must clear this flag so world-unlock logic and saves run.
+  useEffect(() => {
+    if (loadingProgress >= 100) {
+      setIsLoading(false);
+    }
+  }, [loadingProgress]);
 
   const completeOnboarding = () => {
     setState(prev => ({ ...prev, hasCompletedOnboarding: true }));
@@ -86,11 +107,16 @@ export default function App() {
 
   // Notification Logic
   const canAffordEgg = state.coins >= EGG_COST;
-  const canAffordAnyGameUpgrade = 
-    (state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation) ||
-    state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed) ||
-    state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime) ||
-    state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue);
+  const canAffordAnyGameUpgrade =
+    (!isGameUpgradeMaxed(state.upgrades, 'automation') &&
+      state.upgrades.automation === 0 &&
+      state.coins >= UPGRADE_COSTS.automation) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'movementSpeed') &&
+      state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'respawnTime') &&
+      state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
+      state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue));
   
   const canAffordAnySlimeUpgrade = state.slimes.some(s => state.coins >= SLIME_UPGRADE_COST(s.level));
   const canAffordBreeding = state.slimes.length >= 2 && state.coins >= BREEDING_COST;
@@ -122,6 +148,45 @@ export default function App() {
         const coinValue = Math.pow(2, parsed.upgrades.coinValue - 1);
         parsed.coins += idleCoins * coinValue;
         parsed.totalCoinsCollected += idleCoins;
+      }
+
+      if (typeof parsed.gameWorldIndex !== 'number') parsed.gameWorldIndex = INITIAL_STATE.gameWorldIndex;
+      if (typeof parsed.maxUnlockedGameWorld !== 'number') {
+        parsed.maxUnlockedGameWorld = INITIAL_STATE.maxUnlockedGameWorld;
+      }
+      if (!parsed.worldOrderSandThird) {
+        const gwi = Math.min(5, Math.max(0, Math.floor(parsed.gameWorldIndex)));
+        const mu = Math.min(5, Math.max(0, Math.floor(parsed.maxUnlockedGameWorld)));
+        parsed.gameWorldIndex = GAME_WORLD_INDEX_MIGRATE_SAND_THIRD[gwi] ?? gwi;
+        parsed.maxUnlockedGameWorld = migrateMaxUnlockedToSandThirdOrder(mu);
+        parsed.worldOrderSandThird = true;
+      }
+      if (!parsed.worldOrderSandFlowerSwap) {
+        const gwi = Math.min(5, Math.max(0, Math.floor(parsed.gameWorldIndex)));
+        const mu = Math.min(5, Math.max(0, Math.floor(parsed.maxUnlockedGameWorld)));
+        parsed.gameWorldIndex = GAME_WORLD_INDEX_MIGRATE_SAND_FLOWER_SWAP[gwi] ?? gwi;
+        parsed.maxUnlockedGameWorld = migrateMaxUnlockedToSandFlowerOrder(mu);
+        parsed.worldOrderSandFlowerSwap = true;
+      }
+      parsed.gameWorldIndex = Math.min(5, Math.max(0, Math.floor(parsed.gameWorldIndex)));
+      parsed.maxUnlockedGameWorld = Math.min(5, Math.max(0, Math.floor(parsed.maxUnlockedGameWorld)));
+      if (parsed.gameWorldIndex > parsed.maxUnlockedGameWorld) {
+        parsed.gameWorldIndex = parsed.maxUnlockedGameWorld;
+      }
+      if (parsed.upgrades) {
+        parsed.upgrades.automation = parsed.upgrades.automation > 0 ? 1 : 0;
+        parsed.upgrades.movementSpeed = Math.min(
+          MAX_GAME_UPGRADE_LEVEL.movementSpeed,
+          Math.max(1, Math.floor(Number(parsed.upgrades.movementSpeed)) || 1)
+        );
+        parsed.upgrades.respawnTime = Math.min(
+          MAX_GAME_UPGRADE_LEVEL.respawnTime,
+          Math.max(1, Math.floor(Number(parsed.upgrades.respawnTime)) || 1)
+        );
+        parsed.upgrades.coinValue = Math.min(
+          MAX_GAME_UPGRADE_LEVEL.coinValue,
+          Math.max(1, Math.floor(Number(parsed.upgrades.coinValue)) || 1)
+        );
       }
 
       const s = parsed.settings;
@@ -164,6 +229,36 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Maxing all game-tab upgrades unlocks the next world (and resets upgrades for the next tier).
+  useEffect(() => {
+    if (isLoading) return;
+    if (!areAllGameUpgradesMaxed(state.upgrades)) {
+      gameUpgradeMaxedUnlockRef.current = false;
+      return;
+    }
+    if (state.maxUnlockedGameWorld >= 5) return;
+    if (gameUpgradeMaxedUnlockRef.current) return;
+    gameUpgradeMaxedUnlockRef.current = true;
+
+    setState((prev) => {
+      if (!areAllGameUpgradesMaxed(prev.upgrades)) return prev;
+      if (prev.maxUnlockedGameWorld >= 5) return prev;
+      return {
+        ...prev,
+        maxUnlockedGameWorld: prev.maxUnlockedGameWorld + 1,
+        gameWorldIndex: prev.maxUnlockedGameWorld + 1,
+        upgrades: { ...INITIAL_STATE.upgrades },
+      };
+    });
+  }, [
+    isLoading,
+    state.upgrades.automation,
+    state.upgrades.movementSpeed,
+    state.upgrades.respawnTime,
+    state.upgrades.coinValue,
+    state.maxUnlockedGameWorld,
+  ]);
+
   // Save state
   useEffect(() => {
     if (!isLoading) {
@@ -196,6 +291,20 @@ export default function App() {
     });
   }, []);
 
+  const playCoinCollect = useCoinCollectSfx(
+    hasStarted,
+    state.settings.sfxEnabled,
+    state.settings.sfxVolume
+  );
+
+  const handleGameCollect = useCallback(
+    (count: number) => {
+      playCoinCollect(count);
+      addCoins(count);
+    },
+    [addCoins, playCoinCollect]
+  );
+
   const toggleEquipSlime = (id: string) => {
     setState(prev => {
       const isEquipped = prev.equippedSlimeIds.includes(id);
@@ -221,6 +330,7 @@ export default function App() {
   };
 
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
+    if (isGameUpgradeMaxed(state.upgrades, key)) return;
     const currentLevel = state.upgrades[key];
     const cost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
     
@@ -428,12 +538,40 @@ export default function App() {
       ...prev,
       upgrades: {
         automation: 1,
-        movementSpeed: 10,
-        respawnTime: 10,
-        coinValue: 10,
+        movementSpeed: MAX_GAME_UPGRADE_LEVEL.movementSpeed,
+        respawnTime: MAX_GAME_UPGRADE_LEVEL.respawnTime,
+        coinValue: MAX_GAME_UPGRADE_LEVEL.coinValue,
       }
     }));
   };
+
+  /** Same outcome as maxing all game-tab upgrades: unlock next world, go there, reset upgrades. */
+  const debugCompleteLevel = () => {
+    setState((prev) => {
+      if (prev.maxUnlockedGameWorld >= 5) return prev;
+      gameUpgradeMaxedUnlockRef.current = false;
+      return {
+        ...prev,
+        maxUnlockedGameWorld: prev.maxUnlockedGameWorld + 1,
+        gameWorldIndex: prev.maxUnlockedGameWorld + 1,
+        upgrades: { ...INITIAL_STATE.upgrades },
+      };
+    });
+  };
+
+  const goGameWorld = (delta: 1 | -1) => {
+    const next = state.gameWorldIndex + delta;
+    if (next < 0 || next > state.maxUnlockedGameWorld) return;
+    setWorldNavTransition(false);
+    setWorldNavShiftPx(delta * 28);
+    setState((s) => ({ ...s, gameWorldIndex: next }));
+  };
+
+  useLayoutEffect(() => {
+    if (worldNavShiftPx === 0) return;
+    setWorldNavTransition(true);
+    setWorldNavShiftPx(0);
+  }, [state.gameWorldIndex, worldNavShiftPx]);
 
   const debugAddSlime = () => {
     setState(prev => {
@@ -577,13 +715,23 @@ export default function App() {
         <button
           type="button"
           onClick={() => setIsDebugOpen(true)}
-          className="pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600"
+          className={
+            isGameTab
+              ? 'ui-emerald-outline-soft pointer-events-auto justify-self-start rounded-xl bg-white/25 p-2 text-emerald-900/45 backdrop-blur-sm transition-colors hover:text-orange-600'
+              : 'pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600'
+          }
           aria-label="Debug menu"
         >
           <Bug className="h-4 w-4" />
         </button>
         <div className="flex items-center justify-center gap-2">
-          <div className="rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner ring-2 ring-orange-200/60">
+          <div
+            className={
+              isGameTab
+                ? 'ui-emerald-outline rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner'
+                : 'rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner ring-2 ring-orange-200/60'
+            }
+          >
             <CircleDollarSign className="h-5 w-5 text-orange-700" />
           </div>
           <span className="text-xl font-bold tabular-nums text-emerald-950">{state.coins.toLocaleString()}</span>
@@ -591,7 +739,11 @@ export default function App() {
         <button
           type="button"
           onClick={() => setIsOptionsOpen(true)}
-          className="pointer-events-auto justify-self-end rounded-xl p-2 text-emerald-900/70 transition-colors hover:bg-white/40 hover:text-orange-600"
+          className={
+            isGameTab
+              ? 'ui-emerald-outline-soft pointer-events-auto justify-self-end rounded-xl bg-white/25 p-2 text-emerald-900/70 backdrop-blur-sm transition-colors hover:bg-white/40 hover:text-orange-600'
+              : 'pointer-events-auto justify-self-end rounded-xl p-2 text-emerald-900/70 transition-colors hover:bg-white/40 hover:text-orange-600'
+          }
           aria-label="Options"
           aria-haspopup="dialog"
           aria-expanded={isOptionsOpen}
@@ -751,6 +903,10 @@ export default function App() {
                   Contact support
                 </button>
               </div>
+
+              <p className="mt-4 text-center text-[10px] leading-tight text-gray-500/90">
+                Music by chajamakesmusic
+              </p>
             </motion.div>
           </motion.div>
         )}
@@ -877,6 +1033,20 @@ export default function App() {
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-100 py-3 text-sm font-bold text-emerald-800"
                 >
                   <Zap className="h-4 w-4" /> Max Upgrades
+                </button>
+
+                <button
+                  type="button"
+                  onClick={debugCompleteLevel}
+                  disabled={state.maxUnlockedGameWorld >= 5}
+                  title={
+                    state.maxUnlockedGameWorld >= 5
+                      ? 'All worlds already unlocked'
+                      : 'Unlock the next area and reset shop upgrades (normal level completion)'
+                  }
+                  className="ui-afford-disabled flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 py-3 text-sm font-bold text-amber-900 disabled:border-zinc-200 disabled:from-zinc-100 disabled:to-zinc-100 disabled:text-zinc-500"
+                >
+                  <Trophy className="h-4 w-4" /> Complete level
                 </button>
 
                 <button 
@@ -1021,88 +1191,64 @@ export default function App() {
           {state.activeTab === 'game' && (
             <motion.div 
               key="game"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ y: 12, opacity: 1 }}
+              animate={{ y: 0, opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               className="absolute inset-0 h-full min-h-0 w-full"
             >
-              <GameWorld 
-                onCollect={addCoins}
-                automationLevel={state.upgrades.automation}
-                movementSpeedLevel={state.upgrades.movementSpeed}
-                respawnTimeLevel={state.upgrades.respawnTime}
-                equippedSlimes={state.slimes.filter(s => state.equippedSlimeIds.includes(s.id))}
-              />
-              
-              {/* Upgrades Toggle Button */}
-              <button 
-                onClick={() => setIsUpgradesOpen(!isUpgradesOpen)}
-                className="game-hud-upgrade absolute right-4 z-20 rounded-2xl border border-orange-200/50 bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
-              >
-                <TrendingUp className={`w-6 h-6 transition-transform ${isUpgradesOpen ? 'rotate-180' : ''}`} />
-                {canAffordAnyGameUpgrade && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
-                )}
-              </button>
-              
-              {/* Game Sub-Tab: Upgrades */}
-              <AnimatePresence>
-                {isUpgradesOpen && (
-                  <motion.div 
-                    initial={{ y: 300, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 300, opacity: 0 }}
-                    className="game-upgrades-sheet absolute right-4 left-4 z-20 rounded-2xl border border-emerald-200/60 bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
+              <div className="relative h-full min-h-0 w-full">
+                <div
+                  className="absolute inset-0 h-full min-h-0 w-full will-change-transform"
+                  style={{
+                    transform: `translate3d(${worldNavShiftPx}px,0,0)`,
+                    transition: worldNavTransition
+                      ? 'transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)'
+                      : 'none',
+                  }}
+                >
+                  <GameWorld
+                    worldIndex={state.gameWorldIndex}
+                    onCollect={handleGameCollect}
+                    automationLevel={state.upgrades.automation}
+                    movementSpeedLevel={state.upgrades.movementSpeed}
+                    respawnTimeLevel={state.upgrades.respawnTime}
+                    equippedSlimes={state.slimes.filter(s => state.equippedSlimeIds.includes(s.id))}
+                    insetLeftForWorldNav={state.gameWorldIndex > 0}
+                    insetRightForWorldNav={state.maxUnlockedGameWorld > state.gameWorldIndex}
+                  />
+                </div>
+
+                <div className="pointer-events-none absolute left-1/2 top-game-world-label z-[35] -translate-x-1/2">
+                  <div className="ui-emerald-outline-soft rounded-full bg-emerald-950/25 px-3 py-1 shadow-sm backdrop-blur-md">
+                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+                      {GAME_WORLDS[state.gameWorldIndex]?.name ?? GAME_WORLDS[0].name}
+                    </span>
+                  </div>
+                </div>
+
+                {state.gameWorldIndex > 0 && (
+                  <button
+                    type="button"
+                    aria-label="Previous area"
+                    onClick={() => goGameWorld(-1)}
+                    className="pointer-events-auto absolute left-2 top-1/2 z-[38] -translate-y-1/2 rounded-full border-2 border-emerald-300/85 bg-gradient-to-br from-emerald-500 to-teal-600 p-2 text-white shadow-lg shadow-emerald-900/30 ring-2 ring-emerald-200/55 backdrop-blur-md transition hover:brightness-110 active:scale-95"
                   >
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="flex items-center gap-2 font-bold text-emerald-900">
-                        <TrendingUp className="h-4 w-4 text-orange-500" /> Upgrades
-                      </h3>
-                      <button 
-                        onClick={() => setIsUpgradesOpen(false)}
-                        className="text-emerald-400 transition-colors hover:text-orange-500"
-                      >
-                        <ChevronRight className="w-5 h-5 rotate-90" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <UpgradeButton 
-                        icon={<Zap className="w-4 h-4" />}
-                        name="Speed"
-                        level={state.upgrades.movementSpeed}
-                        cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
-                        canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
-                        onClick={() => buyUpgrade('movementSpeed')}
-                      />
-                      <UpgradeButton 
-                        icon={<Timer className="w-4 h-4" />}
-                        name="Respawn"
-                        level={state.upgrades.respawnTime}
-                        cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
-                        canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
-                        onClick={() => buyUpgrade('respawnTime')}
-                      />
-                      <UpgradeButton 
-                        icon={<CircleDollarSign className="w-4 h-4 text-yellow-500" />}
-                        name="Value"
-                        level={state.upgrades.coinValue}
-                        cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
-                        canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
-                        onClick={() => buyUpgrade('coinValue')}
-                      />
-                      <UpgradeButton 
-                        icon={<Settings className="w-4 h-4" />}
-                        name="Auto"
-                        level={state.upgrades.automation}
-                        cost={state.upgrades.automation > 0 ? 0 : UPGRADE_COSTS.automation}
-                        canAfford={state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation}
-                        onClick={() => buyUpgrade('automation')}
-                        maxed={state.upgrades.automation > 0}
-                      />
-                    </div>
-                  </motion.div>
+                    <ChevronLeft className="h-7 w-7 text-white" strokeWidth={2.25} />
+                  </button>
                 )}
-              </AnimatePresence>
+
+                {state.maxUnlockedGameWorld > state.gameWorldIndex && (
+                  <button
+                    type="button"
+                    aria-label="Next area"
+                    onClick={() => goGameWorld(1)}
+                    className="pointer-events-auto absolute right-2 top-1/2 z-[38] -translate-y-1/2 rounded-full border-2 border-emerald-300/85 bg-gradient-to-br from-emerald-500 to-teal-600 p-2 text-white shadow-lg shadow-emerald-900/30 ring-2 ring-emerald-200/55 backdrop-blur-md transition hover:brightness-110 active:scale-95"
+                  >
+                    <ChevronRight className="h-7 w-7 text-white" strokeWidth={2.25} />
+                  </button>
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -1454,6 +1600,85 @@ export default function App() {
           hasNotification={hasMarketNotification}
         />
       </div>
+
+      {/* Game tab: upgrades HUD above bottom nav — z-50 so it paints over glass-nav (z-40) */}
+      {state.activeTab === 'game' && (
+        <>
+          {!isUpgradesOpen && (
+            <button
+              type="button"
+              onClick={() => setIsUpgradesOpen(true)}
+              className="game-hud-upgrade ui-emerald-outline pointer-events-auto absolute right-4 z-50 rounded-2xl bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
+            >
+              <TrendingUp className="h-6 w-6" />
+              {canAffordAnyGameUpgrade && (
+                <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-red-500" />
+              )}
+            </button>
+          )}
+          <AnimatePresence>
+            {isUpgradesOpen && (
+              <motion.div
+                initial={{ y: 300, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 300, opacity: 0 }}
+                className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-4 left-4 z-50 rounded-2xl bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 font-bold text-emerald-900">
+                    <TrendingUp className="h-4 w-4 text-orange-500" /> Upgrades
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsUpgradesOpen(false)}
+                    className="text-emerald-400 transition-colors hover:text-orange-500"
+                  >
+                    <ChevronRight className="h-5 w-5 rotate-90" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <UpgradeButton
+                    icon={<Zap className="h-4 w-4" />}
+                    name="Speed"
+                    level={state.upgrades.movementSpeed}
+                    cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                    canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                    onClick={() => buyUpgrade('movementSpeed')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed')}
+                  />
+                  <UpgradeButton
+                    icon={<Timer className="h-4 w-4" />}
+                    name="Respawn"
+                    level={state.upgrades.respawnTime}
+                    cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                    canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                    onClick={() => buyUpgrade('respawnTime')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime')}
+                  />
+                  <UpgradeButton
+                    icon={<CircleDollarSign className="h-4 w-4 text-yellow-500" />}
+                    name="Value"
+                    level={state.upgrades.coinValue}
+                    cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                    canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                    onClick={() => buyUpgrade('coinValue')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue')}
+                  />
+                  <UpgradeButton
+                    icon={<Settings className="h-4 w-4" />}
+                    name="Auto"
+                    level={state.upgrades.automation}
+                    cost={state.upgrades.automation > 0 ? 0 : UPGRADE_COSTS.automation}
+                    canAfford={state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation}
+                    onClick={() => buyUpgrade('automation')}
+                    maxed={state.upgrades.automation > 0}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }
@@ -1465,8 +1690,8 @@ function NavButton({ active, onClick, icon, hasNotification }: { active: boolean
       onClick={onClick}
       className={`pointer-events-auto relative flex flex-col items-center gap-1 rounded-2xl p-2 transition-all ${active ? 'text-emerald-800' : 'text-gray-400'}`}
     >
-      <div className={`rounded-xl p-2 transition-all ${active ? 'bg-gradient-to-br from-emerald-100 to-orange-100 shadow-sm ring-1 ring-orange-200/50' : ''}`}>
-        {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
+      <div className={`rounded-xl p-2.5 transition-all ${active ? 'ui-emerald-outline bg-gradient-to-br from-emerald-100 to-orange-100 shadow-sm' : ''}`}>
+        {React.cloneElement(icon as React.ReactElement, { className: 'w-8 h-8' })}
       </div>
       {hasNotification && (
         <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />

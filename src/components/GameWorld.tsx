@@ -5,12 +5,16 @@ import {
   GAME_WIDTH, 
   GAME_HEIGHT, 
   COIN_CAP, 
+  COIN_SPAWN_INSETS,
+  COIN_SPAWN_INSET_X_WITH_WORLD_NAV,
   BASE_RESPAWN_TIME, 
   BASE_MOVEMENT_SPEED, 
   BASE_SLIME_SPEED,
   BASE_COLLECT_RADIUS,
   BASE_SLIME_COLLECT_RADIUS,
-  TRAIT_EFFECTS
+  TRAIT_EFFECTS,
+  GAME_WORLDS,
+  type GameWorldDecoration
 } from '../constants';
 
 interface Coin {
@@ -33,12 +37,338 @@ interface Effect {
   size?: number;
 }
 
+interface GroundTrailParticle {
+  id: number;
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  vx: number;
+  vy: number;
+  kind: GameWorldDecoration;
+  color: string;
+  size: number;
+}
+
+const MAX_GROUND_TRAIL_PARTICLES = 140;
+
+const GRASS_TRAIL_COLORS = [
+  'rgba(34, 197, 94, 0.52)',
+  'rgba(74, 222, 128, 0.48)',
+  'rgba(163, 230, 53, 0.44)',
+  'rgba(21, 128, 61, 0.4)',
+];
+
+const FLOWER_TRAIL_COLORS = [
+  'rgba(244, 114, 182, 0.52)',
+  'rgba(192, 132, 252, 0.48)',
+  'rgba(251, 191, 36, 0.44)',
+  'rgba(236, 72, 153, 0.42)',
+];
+
+const REED_TRAIL_COLORS = [
+  'rgba(13, 148, 136, 0.48)',
+  'rgba(45, 212, 191, 0.44)',
+  'rgba(19, 78, 74, 0.46)',
+  'rgba(94, 234, 212, 0.4)',
+];
+
+const SAND_TRAIL_COLORS = [
+  'rgba(217, 119, 6, 0.55)',
+  'rgba(251, 191, 36, 0.5)',
+  'rgba(252, 211, 77, 0.45)',
+  'rgba(180, 83, 9, 0.4)',
+];
+
+const SNOW_TRAIL_COLORS = [
+  'rgba(255, 255, 255, 0.82)',
+  'rgba(224, 242, 254, 0.7)',
+  'rgba(186, 230, 253, 0.6)',
+  'rgba(248, 250, 252, 0.75)',
+];
+
+const MIST_TRAIL_COLORS = [
+  'rgba(228, 228, 231, 0.42)',
+  'rgba(244, 244, 245, 0.38)',
+  'rgba(212, 212, 216, 0.36)',
+  'rgba(250, 250, 250, 0.34)',
+];
+
+function trailColorsFor(kind: GameWorldDecoration): readonly string[] {
+  switch (kind) {
+    case 'grass':
+      return GRASS_TRAIL_COLORS;
+    case 'flowers':
+      return FLOWER_TRAIL_COLORS;
+    case 'reeds':
+      return REED_TRAIL_COLORS;
+    case 'sand':
+      return SAND_TRAIL_COLORS;
+    case 'snow':
+      return SNOW_TRAIL_COLORS;
+    case 'mist':
+      return MIST_TRAIL_COLORS;
+  }
+}
+
+function spawnGroundTrailParticles(
+  list: GroundTrailParticle[],
+  nextId: React.MutableRefObject<number>,
+  anchorX: number,
+  anchorY: number,
+  dx: number,
+  dy: number,
+  kind: GameWorldDecoration,
+  count: number
+) {
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.06) return;
+
+  const backAng = Math.atan2(dy, dx) + Math.PI;
+  const colors = trailColorsFor(kind);
+  const capped = Math.min(5, Math.max(1, count));
+
+  for (let i = 0; i < capped; i++) {
+    const spread = (Math.random() - 0.5) * 1.1;
+    const r = 2 + Math.random() * 6;
+    const px = anchorX + Math.cos(backAng + spread) * r + (Math.random() - 0.5) * 7;
+    const py = anchorY + Math.sin(backAng + spread) * r + (Math.random() - 0.5) * 5;
+
+    let size: number;
+    let life: number;
+    let vx: number;
+    let vy: number;
+
+    switch (kind) {
+      case 'mist':
+        size = 2.2 + Math.random() * 3.2;
+        life = 38 + Math.random() * 22;
+        vx = (Math.random() - 0.5) * 0.55;
+        vy = -0.32 - Math.random() * 0.42;
+        break;
+      case 'snow':
+        size = 0.9 + Math.random() * 2.2;
+        life = 20 + Math.random() * 16;
+        vx = (Math.random() - 0.5) * 0.45;
+        vy = (Math.random() - 0.5) * 0.35;
+        break;
+      case 'flowers':
+        size = 0.85 + Math.random() * 2;
+        life = 24 + Math.random() * 18;
+        vx = (Math.random() - 0.5) * 0.62;
+        vy = Math.random() * 0.26 - 0.06;
+        break;
+      case 'grass':
+      case 'reeds':
+        size = 1 + Math.random() * 2.2;
+        life = 22 + Math.random() * 16;
+        vx = (Math.random() - 0.5) * 0.62;
+        vy = Math.random() * 0.3 + 0.06;
+        break;
+      case 'sand':
+        size = 1.1 + Math.random() * 2.4;
+        life = 26 + Math.random() * 18;
+        vx = (Math.random() - 0.5) * 0.7;
+        vy = Math.random() * 0.35;
+        break;
+    }
+
+    list.push({
+      id: nextId.current++,
+      x: px,
+      y: py,
+      life,
+      maxLife: life,
+      vx,
+      vy,
+      kind,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size,
+    });
+  }
+
+  while (list.length > MAX_GROUND_TRAIL_PARTICLES) {
+    list.shift();
+  }
+}
+
+function drawGroundTrailParticles(ctx: CanvasRenderingContext2D, particles: GroundTrailParticle[]) {
+  for (const p of particles) {
+    const t = p.life / p.maxLife;
+    let alphaMul = 0.88;
+    if (p.kind === 'mist') alphaMul = 0.4;
+    else if (p.kind === 'snow') alphaMul = 0.85;
+    else if (p.kind === 'flowers') alphaMul = 0.82;
+    else if (p.kind === 'grass' || p.kind === 'reeds') alphaMul = 0.86;
+
+    ctx.globalAlpha = Math.max(0, t) * alphaMul;
+    ctx.fillStyle = p.color;
+    const radius = p.size * (0.65 + 0.35 * t);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.kind === 'mist' ? radius * 1.2 : radius, 0, Math.PI * 2);
+    ctx.fill();
+    if (p.kind === 'snow') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 interface GameWorldProps {
   onCollect: (count: number) => void;
   automationLevel: number;
   movementSpeedLevel: number;
   respawnTimeLevel: number;
   equippedSlimes: Slime[];
+  /** Visual theme index 0–5 */
+  worldIndex: number;
+  /** Wider horizontal inset when the previous-world chevron is shown */
+  insetLeftForWorldNav?: boolean;
+  /** Wider horizontal inset when the next-world chevron is shown */
+  insetRightForWorldNav?: boolean;
+}
+
+function getCoinSpawnBounds(
+  width: number,
+  height: number,
+  insetLeftWide: boolean,
+  insetRightWide: boolean
+) {
+  const left = insetLeftWide ? COIN_SPAWN_INSET_X_WITH_WORLD_NAV : COIN_SPAWN_INSETS.left;
+  const right = insetRightWide ? COIN_SPAWN_INSET_X_WITH_WORLD_NAV : COIN_SPAWN_INSETS.right;
+  const minX = left;
+  const maxX = width - right;
+  const minY = COIN_SPAWN_INSETS.top;
+  const maxY = height - COIN_SPAWN_INSETS.bottom;
+  return { minX, maxX, minY, maxY };
+}
+
+function randomCoinPositionInBounds(
+  width: number,
+  height: number,
+  insetLeftWide: boolean,
+  insetRightWide: boolean
+): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCoinSpawnBounds(width, height, insetLeftWide, insetRightWide);
+  if (maxX <= minX || maxY <= minY) {
+    const r = 12;
+    return {
+      x: Math.max(r, Math.min(width - r, width / 2)),
+      y: Math.max(r, Math.min(height - r, height / 2)),
+    };
+  }
+  return {
+    x: Math.random() * (maxX - minX) + minX,
+    y: Math.random() * (maxY - minY) + minY,
+  };
+}
+
+function isCoinInSpawnBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  insetLeftWide: boolean,
+  insetRightWide: boolean
+): boolean {
+  const { minX, maxX, minY, maxY } = getCoinSpawnBounds(width, height, insetLeftWide, insetRightWide);
+  return x >= minX && x <= maxX && y >= minY && y <= maxY;
+}
+
+function drawWorldDecoration(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  decoration: GameWorldDecoration,
+  accent: string
+) {
+  ctx.strokeStyle = accent;
+  ctx.fillStyle = accent;
+  ctx.lineWidth = 1;
+
+  switch (decoration) {
+    case 'grass':
+      for (let i = 0; i < width; i += 40) {
+        for (let j = 0; j < height; j += 40) {
+          ctx.beginPath();
+          ctx.moveTo(i + 10, j + 10);
+          ctx.lineTo(i + 12, j + 5);
+          ctx.moveTo(i + 10, j + 10);
+          ctx.lineTo(i + 8, j + 6);
+          ctx.stroke();
+        }
+      }
+      break;
+    case 'flowers':
+      // 40px grid; visibility between the old bold blobs and the ultra-subtle pass
+      for (let i = 0; i < width; i += 40) {
+        for (let j = 0; j < height; j += 40) {
+          ctx.globalAlpha = 0.26;
+          ctx.beginPath();
+          ctx.arc(i + 10, j + 10, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 0.2;
+          ctx.beginPath();
+          ctx.arc(i + 17, j + 15, 1.65, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+      break;
+    case 'reeds':
+      ctx.lineWidth = 1.25;
+      for (let i = 0; i < width; i += 14) {
+        for (let j = 0; j < height; j += 28) {
+          ctx.beginPath();
+          ctx.moveTo(i, j + 20);
+          ctx.quadraticCurveTo(i + 3, j + 8, i + 2, j);
+          ctx.stroke();
+        }
+      }
+      break;
+    case 'sand':
+      ctx.globalAlpha = 0.35;
+      for (let i = 0; i < width; i += 18) {
+        for (let j = 0; j < height; j += 18) {
+          if ((i + j) % 36 === 0) {
+            ctx.beginPath();
+            ctx.arc(i + (j % 7), j + (i % 5), 1.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'snow':
+      ctx.globalAlpha = 0.5;
+      for (let i = 0; i < width; i += 44) {
+        for (let j = 0; j < height; j += 44) {
+          ctx.beginPath();
+          ctx.arc(i + 10, j + 10, 1.5, 0, Math.PI * 2);
+          ctx.arc(i + 28, j + 24, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'mist':
+      ctx.globalAlpha = 0.12;
+      ctx.lineWidth = 2;
+      for (let j = 0; j < height; j += 24) {
+        ctx.beginPath();
+        ctx.moveTo(0, j);
+        for (let x = 0; x <= width; x += 40) {
+          ctx.lineTo(x, j + Math.sin(x / 50) * 4);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      break;
+    default:
+      break;
+  }
 }
 
 export const GameWorld: React.FC<GameWorldProps> = ({
@@ -47,7 +377,11 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   movementSpeedLevel,
   respawnTimeLevel,
   equippedSlimes,
+  worldIndex,
+  insetLeftForWorldNav = false,
+  insetRightForWorldNav = false,
 }) => {
+  const theme = GAME_WORLDS[Math.min(GAME_WORLDS.length - 1, Math.max(0, worldIndex))];
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dimensionsRef = useRef({ width: GAME_WIDTH, height: GAME_HEIGHT });
@@ -57,7 +391,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const lastRespawnRef = useRef<number>(0);
   const nextCoinId = useRef(0);
   const nextEffectId = useRef(0);
+  const nextGroundTrailId = useRef(0);
   const effectsRef = useRef<Effect[]>([]);
+  const groundTrailRef = useRef<GroundTrailParticle[]>([]);
   const joystickRef = useRef<{
     active: boolean;
     curX: number;
@@ -89,17 +425,14 @@ export const GameWorld: React.FC<GameWorldProps> = ({
           playerRef.current.y = Math.max(r, Math.min(height - r, playerRef.current.y));
         }
         
-        // Remove coins that are now out of bounds
-        const margin = 40;
-        coinsRef.current = coinsRef.current.filter(c => 
-          c.x < width - margin && c.x > margin && 
-          c.y < height - margin && c.y > margin
+        coinsRef.current = coinsRef.current.filter((c) =>
+          isCoinInSpawnBounds(c.x, c.y, width, height, insetLeftForWorldNav, insetRightForWorldNav)
         );
       }
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [insetLeftForWorldNav, insetRightForWorldNav]);
 
   const getCanvasCoords = (e: React.PointerEvent) => {
     const canvas = canvasRef.current;
@@ -134,25 +467,39 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
   };
 
-    // Initialize coins
-    useEffect(() => {
-      const { width, height } = dimensionsRef.current;
-      // If width/height hasn't been set by observer yet, use a safe default
-      const w = width > 0 ? width : GAME_WIDTH;
-      const h = height > 0 ? height : GAME_HEIGHT;
-      const margin = 50;
+  // Initialize coins once (insets match first paint from App)
+  useEffect(() => {
+    const { width, height } = dimensionsRef.current;
+    const w = width > 0 ? width : GAME_WIDTH;
+    const h = height > 0 ? height : GAME_HEIGHT;
 
-      const initialCoins: Coin[] = [];
-      for (let i = 0; i < COIN_CAP; i++) {
-        initialCoins.push({
-          id: nextCoinId.current++,
-          x: Math.random() * (w - margin * 2) + margin,
-          y: Math.random() * (h - margin * 2) + margin,
-          scale: 1,
-        });
-      }
-      coinsRef.current = initialCoins;
-    }, []);
+    const initialCoins: Coin[] = [];
+    for (let i = 0; i < COIN_CAP; i++) {
+      const { x, y } = randomCoinPositionInBounds(w, h, insetLeftForWorldNav, insetRightForWorldNav);
+      initialCoins.push({
+        id: nextCoinId.current++,
+        x,
+        y,
+        scale: 1,
+      });
+    }
+    coinsRef.current = initialCoins;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time spawn; inset props match first paint
+  }, []);
+
+  // Keep coins inside the playfield when world chevron overlays appear or disappear
+  useEffect(() => {
+    const { width, height } = dimensionsRef.current;
+    const w = width > 0 ? width : GAME_WIDTH;
+    const h = height > 0 ? height : GAME_HEIGHT;
+    const { minX, maxX, minY, maxY } = getCoinSpawnBounds(w, h, insetLeftForWorldNav, insetRightForWorldNav);
+    if (maxX <= minX || maxY <= minY) return;
+    coinsRef.current = coinsRef.current.map((c) => ({
+      ...c,
+      x: Math.max(minX, Math.min(maxX, c.x)),
+      y: Math.max(minY, Math.min(maxY, c.y)),
+    }));
+  }, [insetLeftForWorldNav, insetRightForWorldNav]);
 
   const respawnInterval = BASE_RESPAWN_TIME / (1 + respawnTimeLevel * 0.2);
 
@@ -183,6 +530,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     const collectionRadius = BASE_COLLECT_RADIUS * (1 + globalRadiusBuff);
 
     const { width, height } = dimensionsRef.current;
+
+    const trailDecoration = theme.decoration;
 
     // Update Player
     const frameScale = deltaTime / 16.67; // Normalize to 60fps
@@ -217,6 +566,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       }
     }
 
+    const playerBeforeMove = { x: playerRef.current.x, y: playerRef.current.y };
+
     if (moveDir.x !== 0 || moveDir.y !== 0) {
       playerRef.current.x += moveDir.x * movementSpeed * frameScale * joystickSpeedMult;
       playerRef.current.y += moveDir.y * movementSpeed * frameScale * joystickSpeedMult;
@@ -225,6 +576,27 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     // Bounds check
     playerRef.current.x = Math.max(playerRef.current.radius, Math.min(width - playerRef.current.radius, playerRef.current.x));
     playerRef.current.y = Math.max(playerRef.current.radius, Math.min(height - playerRef.current.radius, playerRef.current.y));
+
+    {
+      const pdx = playerRef.current.x - playerBeforeMove.x;
+      const pdy = playerRef.current.y - playerBeforeMove.y;
+      const pd = Math.hypot(pdx, pdy);
+      if (pd > 0.08) {
+        const footY = playerRef.current.y + 14;
+        const intensity = Math.min(1, pd / 6);
+        const n = 1 + Math.floor(intensity * 4);
+        spawnGroundTrailParticles(
+          groundTrailRef.current,
+          nextGroundTrailId,
+          playerRef.current.x,
+          footY,
+          pdx,
+          pdy,
+          trailDecoration,
+          n
+        );
+      }
+    }
 
     // Update Equipped Slimes
     equippedSlimes.forEach((slime, index) => {
@@ -236,6 +608,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       }
 
       const sPos = slimesRef.current[slime.id];
+      const slimeBeforeMove = { x: sPos.x, y: sPos.y };
       const effect = TRAIT_EFFECTS[slime.trait];
       const selfSpeedBuff = (isTraitCycleActive && effect.selfSpeed) ? effect.selfSpeed : 0;
       const finalSlimeSpeed = BASE_SLIME_SPEED * (1 + (slime.stats.agility / 20)) * (1 + selfSpeedBuff) * (1 + globalSlimeSpeedBuff);
@@ -319,6 +692,27 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       // Bounds check for slime
       sPos.x = Math.max(10, Math.min(width - 10, sPos.x));
       sPos.y = Math.max(10, Math.min(height - 10, sPos.y));
+
+      {
+        const sdx = sPos.x - slimeBeforeMove.x;
+        const sdy = sPos.y - slimeBeforeMove.y;
+        const sd = Math.hypot(sdx, sdy);
+        if (sd > 0.06) {
+          const anchorY = sPos.y + 5;
+          const intensity = Math.min(1, sd / 4);
+          const n = 1 + Math.floor(intensity * 3);
+          spawnGroundTrailParticles(
+            groundTrailRef.current,
+            nextGroundTrailId,
+            sPos.x,
+            anchorY,
+            sdx,
+            sdy,
+            trailDecoration,
+            n
+          );
+        }
+      }
     });
 
     // Collection check
@@ -370,13 +764,18 @@ export const GameWorld: React.FC<GameWorldProps> = ({
 
     // Respawn logic
     const now = Date.now();
-    const spawnMargin = 50;
+    const { minX, maxX, minY, maxY } = getCoinSpawnBounds(
+      width,
+      height,
+      insetLeftForWorldNav,
+      insetRightForWorldNav
+    );
     if (coinsRef.current.length < COIN_CAP && now - lastRespawnRef.current > respawnInterval) {
-      if (width > spawnMargin * 2 && height > spawnMargin * 2) {
+      if (maxX > minX && maxY > minY) {
         coinsRef.current.push({
           id: nextCoinId.current++,
-          x: Math.random() * (width - spawnMargin * 2) + spawnMargin,
-          y: Math.random() * (height - spawnMargin * 2) + spawnMargin,
+          x: Math.random() * (maxX - minX) + minX,
+          y: Math.random() * (maxY - minY) + minY,
           scale: 0,
         });
         lastRespawnRef.current = now;
@@ -392,30 +791,53 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       return e.life > 0;
     });
 
+    groundTrailRef.current = groundTrailRef.current.filter((p) => {
+      p.life -= 1;
+      switch (p.kind) {
+        case 'sand':
+        case 'grass':
+        case 'reeds':
+          p.x += p.vx;
+          p.y += p.vy + 0.14;
+          p.vx *= 0.93;
+          p.vy *= 0.88;
+          break;
+        case 'flowers':
+          p.x += p.vx;
+          p.y += p.vy + 0.1;
+          p.vx *= 0.93;
+          p.vy *= 0.88;
+          break;
+        case 'snow':
+          p.x += p.vx * 0.85;
+          p.y += p.vy - 0.07;
+          p.vx *= 0.95;
+          p.vy *= 0.92;
+          break;
+        case 'mist':
+          p.x += p.vx * 0.92;
+          p.y += p.vy - 0.04;
+          p.vx *= 0.97;
+          p.vy *= 0.98;
+          break;
+      }
+      return p.life > 0;
+    });
+
     // Draw
     ctx.clearRect(0, 0, width, height);
 
-    // Playfield: soft emerald → warm amber (matches app shell)
+    const [g0, g1, g2] = theme.gradient;
     const fieldGrad = ctx.createLinearGradient(0, 0, width, height);
-    fieldGrad.addColorStop(0, '#6ee7b7');
-    fieldGrad.addColorStop(0.48, '#86efac');
-    fieldGrad.addColorStop(1, '#fde68a');
+    fieldGrad.addColorStop(0, g0);
+    fieldGrad.addColorStop(0.48, g1);
+    fieldGrad.addColorStop(1, g2);
     ctx.fillStyle = fieldGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // Subtle grass tufts
-    ctx.strokeStyle = '#34d399';
-    ctx.lineWidth = 1;
-    for(let i=0; i<width; i+=40) {
-      for(let j=0; j<height; j+=40) {
-        ctx.beginPath();
-        ctx.moveTo(i + 10, j + 10);
-        ctx.lineTo(i + 12, j + 5);
-        ctx.moveTo(i + 10, j + 10);
-        ctx.lineTo(i + 8, j + 6);
-        ctx.stroke();
-      }
-    }
+    drawWorldDecoration(ctx, width, height, theme.decoration, theme.accentStroke);
+
+    drawGroundTrailParticles(ctx, groundTrailRef.current);
 
     // Draw Coins
     coinsRef.current.forEach((coin) => {
@@ -765,7 +1187,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   });
 
   return (
-    <div ref={containerRef} className="bg-app-game relative h-full min-h-0 w-full overflow-hidden">
+    <div ref={containerRef} className="relative h-full min-h-0 w-full overflow-hidden bg-zinc-950/5">
       <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}
