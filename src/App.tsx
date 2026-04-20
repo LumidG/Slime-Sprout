@@ -30,7 +30,8 @@ import {
   Star,
   Mail,
   X,
-  Music
+  Music,
+  ArrowUpRight
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
@@ -1423,6 +1424,7 @@ export default function App() {
                     <SlimeCard 
                       key={slime.id} 
                       slime={slime} 
+                      coins={state.coins}
                       isEquipped={state.equippedSlimeIds.includes(slime.id)}
                       onEquip={toggleEquipSlime}
                       onClick={setSelectedSlimeDetail}
@@ -1560,10 +1562,10 @@ export default function App() {
                     type="button"
                     onClick={breedSlimes}
                     disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                    className="ui-afford-disabled group flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-3 text-white shadow-xl shadow-emerald-900/20 transition-all hover:brightness-105 active:scale-[0.98] disabled:from-zinc-400 disabled:via-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
+                    className="ui-afford-disabled group flex w-full flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                   >
-                    <span className="text-[11px] font-black uppercase tracking-widest group-disabled:text-zinc-100">Breed Slimes</span>
-                    <span className="text-sm font-black tabular-nums text-emerald-50 group-disabled:text-zinc-200">
+                    <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Breed Slimes</span>
+                    <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">
                       {BREEDING_COST.toLocaleString()} 💰
                     </span>
                   </button>
@@ -1738,20 +1740,31 @@ function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: U
 
 const SlimeCard: React.FC<{ 
   slime: Slime; 
+  coins: number;
   isEquipped: boolean; 
   onEquip: (id: string) => void;
   onClick: (slime: Slime) => void;
-}> = ({ slime, isEquipped, onEquip, onClick }) => {
-  const trait = TRAIT_EFFECTS[slime.trait];
+}> = ({ slime, coins, isEquipped, onEquip, onClick }) => {
+  const hasAffordableStatUpgrade = (['health', 'strength', 'agility'] as const).some(
+    (stat) => coins >= SLIME_UPGRADE_COST(slime.statLevels[stat])
+  );
   return (
     <motion.div 
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       onClick={() => onClick(slime)}
-      className={`flex cursor-pointer flex-col items-center rounded-2xl border p-2 shadow-sm transition-all active:scale-95 ${
+      className={`relative flex cursor-pointer flex-col items-center rounded-2xl border p-2 shadow-sm transition-all active:scale-95 ${
         isEquipped ? 'border-orange-200 bg-gradient-to-b from-amber-50 to-orange-50 ring-1 ring-orange-200/60' : 'border-emerald-100/80 bg-white hover:border-orange-200/60'
       }`}
     >
+      {hasAffordableStatUpgrade && (
+        <div
+          className="pointer-events-none absolute -right-0.5 -top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white"
+          aria-hidden
+        >
+          <ArrowUpRight className="h-3 w-3" strokeWidth={2.75} />
+        </div>
+      )}
       <div 
         className="w-10 h-10 rounded-full mb-2 shadow-inner relative overflow-hidden flex items-center justify-center" 
         style={{ backgroundColor: slime.color }}
