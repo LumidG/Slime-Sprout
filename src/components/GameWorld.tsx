@@ -4,7 +4,7 @@ import { Slime } from '../types';
 import { 
   GAME_WIDTH, 
   GAME_HEIGHT, 
-  COIN_CAP, 
+  onScreenCoinCap, 
   COIN_SPAWN_INSETS,
   COIN_SPAWN_INSET_X_WITH_WORLD_NAV,
   BASE_RESPAWN_TIME, 
@@ -67,10 +67,10 @@ const FLOWER_TRAIL_COLORS = [
 ];
 
 const REED_TRAIL_COLORS = [
-  'rgba(13, 148, 136, 0.48)',
-  'rgba(45, 212, 191, 0.44)',
-  'rgba(19, 78, 74, 0.46)',
-  'rgba(94, 234, 212, 0.4)',
+  'rgba(45, 212, 191, 0.4)',
+  'rgba(94, 234, 212, 0.36)',
+  'rgba(20, 184, 166, 0.38)',
+  'rgba(153, 246, 228, 0.34)',
 ];
 
 const SAND_TRAIL_COLORS = [
@@ -277,12 +277,20 @@ function isCoinInSpawnBounds(
   return x >= minX && x <= maxX && y >= minY && y <= maxY;
 }
 
+/** Deterministic 0–1 value for irregular spacing / phases (stable each frame). */
+function decoHash(a: number, b: number): number {
+  let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263);
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return (h >>> 0) / 4294967296;
+}
+
 function drawWorldDecoration(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   decoration: GameWorldDecoration,
-  accent: string
+  accent: string,
+  timeSec = 0
 ) {
   ctx.strokeStyle = accent;
   ctx.fillStyle = accent;
@@ -317,17 +325,43 @@ function drawWorldDecoration(
         }
       }
       break;
-    case 'reeds':
-      ctx.lineWidth = 1.25;
-      for (let i = 0; i < width; i += 14) {
-        for (let j = 0; j < height; j += 28) {
+    case 'reeds': {
+      // Sparse flowing curves — strong enough to read on a light teal field
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 0.78;
+      const colStep = 42;
+      const rowStep = 48;
+      for (let cx = 0; cx < width + colStep; cx += colStep) {
+        for (let cy = 0; cy < height + rowStep; cy += rowStep) {
+          const stagger = ((Math.floor(cx / colStep) + Math.floor(cy / rowStep)) % 2) * 15;
+          const baseX = cx + stagger;
+          const bottom = cy + rowStep - 2;
+          const h = rowStep * 0.88;
+          const top = bottom - h;
+          const phase = baseX * 0.095 + cy * 0.062;
+          const sway = Math.sin(phase) * 6.5;
+          const sway2 = Math.sin(phase + 1.2) * 8;
+          ctx.globalAlpha = 0.36;
           ctx.beginPath();
-          ctx.moveTo(i, j + 20);
-          ctx.quadraticCurveTo(i + 3, j + 8, i + 2, j);
+          ctx.moveTo(baseX + sway * 0.12, bottom);
+          ctx.bezierCurveTo(
+            baseX + sway * 0.4 + 2.5,
+            bottom - h * 0.34,
+            baseX + sway2 * 0.45 - 1.5,
+            bottom - h * 0.68,
+            baseX + sway2 * 0.78,
+            top
+          );
           ctx.stroke();
         }
       }
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'butt';
+      ctx.lineJoin = 'miter';
       break;
+    }
     case 'sand':
       ctx.globalAlpha = 0.35;
       for (let i = 0; i < width; i += 18) {
@@ -353,19 +387,76 @@ function drawWorldDecoration(
       }
       ctx.globalAlpha = 1;
       break;
-    case 'mist':
-      ctx.globalAlpha = 0.12;
-      ctx.lineWidth = 2;
-      for (let j = 0; j < height; j += 24) {
+    case 'mist': {
+      // Soft drifting fog banks (not ruled lines)
+      const t = timeSec;
+      for (let i = 0; i < 7; i++) {
+        const hx = decoHash(i, 11);
+        const hy = decoHash(i, 19);
+        const cx = hx * width + Math.sin(t * 0.11 + i * 0.9) * (28 + hx * 18);
+        const cy = hy * height + Math.cos(t * 0.09 + i * 1.1) * (22 + hy * 16);
+        const r = 55 + decoHash(i, 23) * 55;
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, 'rgba(250, 250, 250, 0.11)');
+        g.addColorStop(0.45, 'rgba(228, 228, 231, 0.045)');
+        g.addColorStop(1, 'rgba(228, 228, 231, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = accent;
+      let y = -16;
+      let row = 0;
+      while (y < height + 24) {
+        const spacing = 17 + decoHash(row, 7) * 18;
+        const phase = decoHash(row, 31) * Math.PI * 2;
+        const ampRow = 0.75 + decoHash(row, 41) * 0.45;
+        ctx.globalAlpha = 0.065 + decoHash(row, 53) * 0.055;
+        ctx.lineWidth = 1.1 + decoHash(row, 61) * 0.85;
         ctx.beginPath();
-        ctx.moveTo(0, j);
-        for (let x = 0; x <= width; x += 40) {
-          ctx.lineTo(x, j + Math.sin(x / 50) * 4);
+        ctx.moveTo(-8, y);
+        for (let x = 0; x <= width + 8; x += 5) {
+          const wave =
+            Math.sin(x / 78 + phase + t * 0.22) * 5.5 * ampRow +
+            Math.sin(x / 34 + phase * 1.7) * 2.8 * ampRow +
+            Math.sin(x / 155 + t * 0.07 + row * 0.31) * 3.2;
+          ctx.lineTo(x, y + wave);
         }
         ctx.stroke();
+        y += spacing;
+        row += 1;
       }
+
+      // Light floating wisps (short arcs, slow drift)
+      ctx.globalAlpha = 0.09;
+      ctx.lineWidth = 1.15;
+      for (let w = 0; w < 9; w++) {
+        const bx = decoHash(w, 71) * width;
+        const by = decoHash(w, 83) * height;
+        const driftX = Math.sin(t * 0.18 + w * 1.4) * 14;
+        const driftY = Math.cos(t * 0.14 + w * 1.1) * 10;
+        const len = 36 + decoHash(w, 97) * 48;
+        const ang = decoHash(w, 101) * Math.PI * 2 + t * 0.05;
+        const x0 = bx + driftX - Math.cos(ang) * len * 0.5;
+        const y0 = by + driftY - Math.sin(ang) * len * 0.5;
+        const x1 = bx + driftX + Math.cos(ang) * len * 0.5;
+        const y1 = by + driftY + Math.sin(ang) * len * 0.5;
+        const cx = (x0 + x1) / 2 + Math.sin(t * 0.25 + w) * 8;
+        const cy = (y0 + y1) / 2 + Math.cos(t * 0.2 + w) * 6;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.quadraticCurveTo(cx, cy, x1, y1);
+        ctx.stroke();
+      }
+
       ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'butt';
+      ctx.lineJoin = 'miter';
       break;
+    }
     default:
       break;
   }
@@ -467,25 +558,25 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
   };
 
-  // Initialize coins once (insets match first paint from App)
+  // Match on-screen coin count to respawn upgrade (2, 4, 6, …); trim or spawn as level changes.
   useEffect(() => {
     const { width, height } = dimensionsRef.current;
     const w = width > 0 ? width : GAME_WIDTH;
     const h = height > 0 ? height : GAME_HEIGHT;
-
-    const initialCoins: Coin[] = [];
-    for (let i = 0; i < COIN_CAP; i++) {
+    const cap = onScreenCoinCap(respawnTimeLevel);
+    while (coinsRef.current.length > cap) {
+      coinsRef.current.pop();
+    }
+    while (coinsRef.current.length < cap) {
       const { x, y } = randomCoinPositionInBounds(w, h, insetLeftForWorldNav, insetRightForWorldNav);
-      initialCoins.push({
+      coinsRef.current.push({
         id: nextCoinId.current++,
         x,
         y,
         scale: 1,
       });
     }
-    coinsRef.current = initialCoins;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time spawn; inset props match first paint
-  }, []);
+  }, [respawnTimeLevel, insetLeftForWorldNav, insetRightForWorldNav]);
 
   // Keep coins inside the playfield when world chevron overlays appear or disappear
   useEffect(() => {
@@ -526,7 +617,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       }
     });
 
-    const movementSpeed = BASE_MOVEMENT_SPEED * (1 + movementSpeedLevel * 0.1) * (1 + playerSpeedBuff);
+    const movementSpeed =
+      BASE_MOVEMENT_SPEED * (1 + movementSpeedLevel * 0.06) * (1 + playerSpeedBuff);
     const collectionRadius = BASE_COLLECT_RADIUS * (1 + globalRadiusBuff);
 
     const { width, height } = dimensionsRef.current;
@@ -770,7 +862,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       insetLeftForWorldNav,
       insetRightForWorldNav
     );
-    if (coinsRef.current.length < COIN_CAP && now - lastRespawnRef.current > respawnInterval) {
+    const screenCoinCap = onScreenCoinCap(respawnTimeLevel);
+    if (coinsRef.current.length < screenCoinCap && now - lastRespawnRef.current > respawnInterval) {
       if (maxX > minX && maxY > minY) {
         coinsRef.current.push({
           id: nextCoinId.current++,
@@ -835,7 +928,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     ctx.fillStyle = fieldGrad;
     ctx.fillRect(0, 0, width, height);
 
-    drawWorldDecoration(ctx, width, height, theme.decoration, theme.accentStroke);
+    drawWorldDecoration(ctx, width, height, theme.decoration, theme.accentStroke, timeNow / 1000);
 
     drawGroundTrailParticles(ctx, groundTrailRef.current);
 

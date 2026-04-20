@@ -6,6 +6,15 @@ export type SlimeTrait =
   | 'Haste' | 'Frenzy' 
   | 'None';
 
+/** Combat skill for Slime Arena only — separate from coin-field traits. */
+export type SlimeArenaAbility =
+  | 'None'
+  | 'Rally'
+  | 'Fortify'
+  | 'Smash'
+  | 'Rush'
+  | 'Harmony';
+
 export interface SlimeStats {
   health: number;
   strength: number;
@@ -19,6 +28,8 @@ export interface Slime {
   stats: SlimeStats;
   statLevels: SlimeStats; // Individual levels for pricing
   trait: SlimeTrait;
+  /** Used only in Slime Arena; has its own cooldown when activated. */
+  arenaAbility: SlimeArenaAbility;
   level: number;
   value: number;
   hatchedAt: number;
@@ -31,6 +42,21 @@ export interface Upgrade {
   level: number;
   baseCost: number;
   costMultiplier: number;
+}
+
+/** Single slime auction in the Slime Market (offline-simulated). */
+export interface SlimeMarketAuction {
+  id: string;
+  slime: Slime;
+  seller: 'player' | 'npc';
+  endsAt: number;
+  /** Highest bid so far (0 if none). */
+  currentBid: number;
+  /** Minimum coins for the first bid. */
+  minBid: number;
+  highBidder: 'player' | 'npc' | null;
+  /** Coins the local player currently has committed as the high bid (only if highBidder === 'player'). */
+  playerBidAmount: number;
 }
 
 export interface GameState {
@@ -56,8 +82,23 @@ export interface GameState {
   } | null;
   newlyHatchedSlime: Slime | null;
 
+  /** Player slime auctions + NPC listings; persisted. */
+  slimeMarketAuctions: SlimeMarketAuction[];
+
+  /**
+   * Slime id → timestamp (ms) when arena cooldown ends. While active, that slime grants
+   * no coin-trait bonuses and no in-world trait bursts when equipped.
+   */
+  slimeCooldownUntil: Record<string, number>;
+
+  /**
+   * Slime id → timestamp (ms) when arena **ability** cooldown ends (separate from
+   * `slimeCooldownUntil`, which is the penalty after losing a fight).
+   */
+  slimeArenaAbilityCooldownUntil: Record<string, number>;
+
   // UI State
-  activeTab: 'game' | 'slimes' | 'market';
+  activeTab: 'game' | 'slimes' | 'market' | 'slimeMarket' | 'arena';
   activeSubTab: string;
   hasCompletedOnboarding: boolean;
 
@@ -86,6 +127,8 @@ export interface GameState {
     sfxEnabled: boolean;
     /** Sound effects volume 0–1 when SFX are enabled. */
     sfxVolume: number;
+    /** Subtle native haptics on button taps (Capacitor Android/iOS). */
+    hapticsEnabled: boolean;
   };
 }
 
@@ -104,6 +147,9 @@ export const INITIAL_STATE: GameState = {
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
+  slimeMarketAuctions: [],
+  slimeCooldownUntil: {},
+  slimeArenaAbilityCooldownUntil: {},
   activeTab: 'game',
   activeSubTab: 'collect',
   hasCompletedOnboarding: false,
@@ -116,5 +162,6 @@ export const INITIAL_STATE: GameState = {
     musicVolume: 1,
     sfxEnabled: true,
     sfxVolume: 1,
+    hapticsEnabled: false,
   },
 };

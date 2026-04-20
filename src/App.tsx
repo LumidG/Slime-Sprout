@@ -2,9 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, 
-  ShoppingBag, 
   Ghost,
   Dna, 
+  Gavel,
   TrendingUp, 
   Package, 
   ChevronRight,
@@ -31,10 +31,14 @@ import {
   Mail,
   X,
   Music,
-  ArrowUpRight
+  ArrowUp,
+  Swords,
+  Smartphone,
 } from 'lucide-react';
-import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
+import { GameState, INITIAL_STATE, Slime, SlimeMarketAuction, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
+import { SlimeMarketPanel } from './components/SlimeMarketPanel';
+import { SlimeArenaPanel } from './components/SlimeArenaPanel';
 import { 
   COLORS, 
   TRAITS, 
@@ -42,8 +46,8 @@ import {
   EGG_COST,
   BREEDING_COST,
   SLIME_UPGRADE_COST,
-  BASE_RESPAWN_TIME,
-  COIN_CAP,
+  computeOfflineIdleGain,
+  OFFLINE_IDLE_CAP_MS,
   SLIME_NAMES,
   TRAIT_EFFECTS,
   MAX_EQUIPPED_SLIMES,
@@ -56,12 +60,36 @@ import {
   migrateMaxUnlockedToSandFlowerOrder,
   MAX_GAME_UPGRADE_LEVEL,
   areAllGameUpgradesMaxed,
-  isGameUpgradeMaxed
+  isGameUpgradeMaxed,
+  getSlimeMarketTrend,
+  processSlimeMarketTick,
+  getNextMarketBid,
+  getInstantNpcBuyPrice,
+  SLIME_MARKET_MIN_BID_STEP,
+  SLIME_MARKET_AUCTION_MS,
+  ARENA_COOLDOWN_MS,
+  ARENA_ABILITY_META,
+  isSlimeOnCooldown,
+  isArenaAbilityOnCooldown,
+  rollRandomArenaAbility,
+  type ArenaEncounter,
 } from './constants';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
 import { useBlossomMusic } from './hooks/useBlossomMusic';
 import { useCoinCollectSfx } from './hooks/useCoinCollectSfx';
+import { useGlobalButtonTapFeedback, triggerPreviewHaptic } from './hooks/useTapFeedback';
+
+function formatAwayDuration(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return 'a short while';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'}`;
+  const h = Math.floor(min / 60);
+  const rm = min % 60;
+  if (rm === 0) return `${h} hour${h === 1 ? '' : 's'}`;
+  return `${h}h ${rm}m`;
+}
 
 export default function App() {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
@@ -78,6 +106,22 @@ export default function App() {
   const [worldNavShiftPx, setWorldNavShiftPx] = useState(0);
   const [worldNavTransition, setWorldNavTransition] = useState(true);
   const gameUpgradeMaxedUnlockRef = useRef(false);
+  /** Shown after load or resume when automation earned coins while away. */
+  const [offlineWelcome, setOfflineWelcome] = useState<{
+    currencyEarned: number;
+    awayMs: number;
+    idleCoins: number;
+  } | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /** Re-render once per second so arena/collection cooldown timers stay accurate. */
+  const [, setCooldownClock] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setCooldownClock((c) => c + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const nowMs = Date.now();
 
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
@@ -107,7 +151,6 @@ export default function App() {
   };
 
   // Notification Logic
-  const canAffordEgg = state.coins >= EGG_COST;
   const canAffordAnyGameUpgrade =
     (!isGameUpgradeMaxed(state.upgrades, 'automation') &&
       state.upgrades.automation === 0 &&
@@ -119,10 +162,15 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
       state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue));
   
-  const canAffordAnySlimeUpgrade = state.slimes.some(s => state.coins >= SLIME_UPGRADE_COST(s.level));
   const canAffordBreeding = state.slimes.length >= 2 && state.coins >= BREEDING_COST;
+  const canAffordNpcMarketBid = state.slimeMarketAuctions.some((a) => {
+    if (a.seller !== 'npc' || a.endsAt <= Date.now()) return false;
+    const spendable = state.coins + (a.highBidder === 'player' ? a.playerBidAmount : 0);
+    return spendable >= getInstantNpcBuyPrice(a) || spendable >= getNextMarketBid(a);
+  });
 
-  const hasMarketNotification = canAffordEgg || canAffordAnyGameUpgrade || canAffordAnySlimeUpgrade || canAffordBreeding;
+  const hasBreedingNotification = canAffordBreeding;
+  const hasSlimeMarketTabNotification = canAffordNpcMarketBid;
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
   const isGameTab = state.activeTab === 'game';
@@ -139,16 +187,16 @@ export default function App() {
     if (saved) {
       const parsed = JSON.parse(saved);
       const now = Date.now();
-      const diff = Math.min(now - parsed.lastSavedTime, 12 * 60 * 60 * 1000); // Cap at 12 hours
-      
-      // Calculate idle progress
-      if (parsed.upgrades.automation > 0) {
-        const respawnInterval = BASE_RESPAWN_TIME / (1 + parsed.upgrades.respawnTime * 0.2);
-        const coinsPerSecond = 1 / (respawnInterval / 1000);
-        const idleCoins = Math.floor((diff / 1000) * coinsPerSecond);
-        const coinValue = Math.pow(2, parsed.upgrades.coinValue - 1);
-        parsed.coins += idleCoins * coinValue;
-        parsed.totalCoinsCollected += idleCoins;
+      const diff = Math.min(now - parsed.lastSavedTime, OFFLINE_IDLE_CAP_MS);
+      const idleGain = computeOfflineIdleGain(parsed.upgrades, diff);
+      if (idleGain.currencyEarned > 0) {
+        parsed.coins += idleGain.currencyEarned;
+        parsed.totalCoinsCollected += idleGain.idleCoins;
+        setOfflineWelcome({
+          currencyEarned: idleGain.currencyEarned,
+          awayMs: diff,
+          idleCoins: idleGain.idleCoins,
+        });
       }
 
       if (typeof parsed.gameWorldIndex !== 'number') parsed.gameWorldIndex = INITIAL_STATE.gameWorldIndex;
@@ -203,6 +251,7 @@ export default function App() {
           musicVolume: legacyVol,
           sfxEnabled: legacyOn,
           sfxVolume: legacyVol,
+          hapticsEnabled: Boolean(s?.hapticsEnabled ?? false),
         };
       } else {
         parsed.settings = {
@@ -210,8 +259,33 @@ export default function App() {
           musicVolume: clampVol(s?.musicVolume),
           sfxEnabled: Boolean(s?.sfxEnabled ?? true),
           sfxVolume: clampVol(s?.sfxVolume),
+          hapticsEnabled: Boolean(s?.hapticsEnabled ?? false),
         };
       }
+
+      if (!Array.isArray(parsed.slimeMarketAuctions)) {
+        parsed.slimeMarketAuctions = [];
+      }
+      const validTabs = new Set(['game', 'slimes', 'market', 'slimeMarket', 'arena']);
+      if (!validTabs.has(parsed.activeTab)) {
+        parsed.activeTab = 'game';
+      }
+      if (!parsed.slimeCooldownUntil || typeof parsed.slimeCooldownUntil !== 'object') {
+        parsed.slimeCooldownUntil = {};
+      }
+      if (!parsed.slimeArenaAbilityCooldownUntil || typeof parsed.slimeArenaAbilityCooldownUntil !== 'object') {
+        parsed.slimeArenaAbilityCooldownUntil = {};
+      }
+      if (Array.isArray(parsed.slimes)) {
+        parsed.slimes = parsed.slimes.map((s: Slime) => ({
+          ...s,
+          arenaAbility: s.arenaAbility ?? rollRandomArenaAbility(),
+        }));
+      }
+      if (parsed.activeTab === 'market' && parsed.marketSection === 'slimeMarket') {
+        parsed.activeTab = 'slimeMarket';
+      }
+      delete parsed.marketSection;
       
       setState({ ...parsed, lastSavedTime: now });
     }
@@ -229,6 +303,38 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, []);
+
+  /** Apply automation idle gains when returning from background (same formula as initial load). */
+  useEffect(() => {
+    if (!hasStarted || isLoading) return;
+    const minAwayMs = 5000;
+
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const prev = stateRef.current;
+      const now = Date.now();
+      const rawDiff = now - prev.lastSavedTime;
+      if (rawDiff < minAwayMs) return;
+      const diff = Math.min(rawDiff, OFFLINE_IDLE_CAP_MS);
+      const idleGain = computeOfflineIdleGain(prev.upgrades, diff);
+      if (idleGain.currencyEarned <= 0) return;
+
+      setOfflineWelcome({
+        currencyEarned: idleGain.currencyEarned,
+        awayMs: diff,
+        idleCoins: idleGain.idleCoins,
+      });
+      setState((s) => ({
+        ...s,
+        coins: s.coins + idleGain.currencyEarned,
+        totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+        lastSavedTime: now,
+      }));
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [hasStarted, isLoading]);
 
   // Maxing all game-tab upgrades unlocks the next world (and resets upgrades for the next tier).
   useEffect(() => {
@@ -270,13 +376,23 @@ export default function App() {
     }
   }, [state, isLoading]);
 
+  // Slime market: resolve auctions, NPC bids on your listings, refill NPC listings.
+  useEffect(() => {
+    if (isLoading) return;
+    const run = () => setState((prev) => processSlimeMarketTick(prev));
+    run();
+    const id = window.setInterval(run, 2800);
+    return () => window.clearInterval(id);
+  }, [isLoading]);
+
   const addCoins = useCallback((count: number) => {
     setState(prev => {
-      const upgradeValue = Math.pow(2, prev.upgrades.coinValue - 1);
+      const upgradeValue = prev.upgrades.coinValue;
       
       // Calculate trait bonus
       let traitBonus = 0;
       prev.equippedSlimeIds.forEach(id => {
+        if (isSlimeOnCooldown(prev.slimeCooldownUntil, id)) return;
         const slime = prev.slimes.find(s => s.id === id);
         if (slime && slime.trait) {
           traitBonus += TRAIT_EFFECTS[slime.trait].coinValue || 0;
@@ -297,6 +413,18 @@ export default function App() {
     state.settings.sfxEnabled,
     state.settings.sfxVolume
   );
+
+  useGlobalButtonTapFeedback(
+    hasStarted,
+    state.settings.sfxEnabled,
+    state.settings.sfxVolume,
+    state.settings.hapticsEnabled
+  );
+
+  useEffect(() => {
+    if (!offlineWelcome || !hasStarted) return;
+    playCoinCollect(Math.min(5, Math.max(1, Math.ceil(offlineWelcome.idleCoins / 20))));
+  }, [offlineWelcome, hasStarted, playCoinCollect]);
 
   const handleGameCollect = useCallback(
     (count: number) => {
@@ -406,6 +534,7 @@ export default function App() {
             },
             statLevels: { health: 1, strength: 1, agility: 1 },
             trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+            arenaAbility: rollRandomArenaAbility(),
             level: 1,
             value: 50,
             hatchedAt: Date.now()
@@ -494,6 +623,7 @@ export default function App() {
       },
       statLevels: { health: 1, strength: 1, agility: 1 },
       trait: Math.random() > 0.5 ? s1.trait : s2.trait,
+      arenaAbility: Math.random() > 0.5 ? s1.arenaAbility : s2.arenaAbility,
       level: 1,
       value: 100,
       hatchedAt: Date.now()
@@ -506,7 +636,85 @@ export default function App() {
       newlyHatchedSlime: newSlime
     }));
     setBreedingSelection([]);
-    setState(s => ({ ...s, activeSubTab: 'collection' }));
+    setState(s => ({ ...s, activeSubTab: 'collect' }));
+  };
+
+  const listSlimeForAuction = (slimeId: string) => {
+    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
+    setState((prev) => {
+      const slime = prev.slimes.find((s) => s.id === slimeId);
+      if (!slime) return prev;
+      const minBid = Math.max(50, Math.floor(slime.value * 0.75));
+      const auction: SlimeMarketAuction = {
+        id: `pl-${Math.random().toString(36).slice(2, 11)}`,
+        slime: { ...slime },
+        seller: 'player',
+        endsAt: Date.now() + SLIME_MARKET_AUCTION_MS,
+        currentBid: 0,
+        minBid,
+        highBidder: null,
+        playerBidAmount: 0,
+      };
+      return {
+        ...prev,
+        slimes: prev.slimes.filter((s) => s.id !== slimeId),
+        equippedSlimeIds: prev.equippedSlimeIds.filter((id) => id !== slimeId),
+        slimeMarketAuctions: [...prev.slimeMarketAuctions, auction],
+      };
+    });
+  };
+
+  const placeMarketBid = (auctionId: string) => {
+    setState((prev) => {
+      const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
+      if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
+      const next = getNextMarketBid(a);
+      if (prev.coins < next) return prev;
+      let coins = prev.coins;
+      if (a.highBidder === 'player') coins += a.playerBidAmount;
+      coins -= next;
+      let currentBid = next;
+      let highBidder: 'player' | 'npc' = 'player';
+      let playerBidAmount = next;
+      const cap = Math.floor(a.slime.value * 2.4);
+      if (Math.random() < 0.4 && currentBid + SLIME_MARKET_MIN_BID_STEP <= cap) {
+        const npcBid =
+          currentBid +
+          SLIME_MARKET_MIN_BID_STEP +
+          Math.floor(Math.random() * 4) * SLIME_MARKET_MIN_BID_STEP;
+        if (npcBid <= cap) {
+          coins += playerBidAmount;
+          highBidder = 'npc';
+          currentBid = npcBid;
+          playerBidAmount = 0;
+        }
+      }
+      const slimeMarketAuctions = prev.slimeMarketAuctions.map((x) =>
+        x.id === auctionId ? { ...a, currentBid, highBidder, playerBidAmount } : x
+      );
+      return { ...prev, coins, slimeMarketAuctions };
+    });
+  };
+
+  const placeMarketInstantBuy = (auctionId: string) => {
+    setState((prev) => {
+      const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
+      if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
+      const instant = getInstantNpcBuyPrice(a);
+      const next = getNextMarketBid(a);
+      if (instant >= next) return prev;
+      let coins = prev.coins;
+      if (a.highBidder === 'player') coins += a.playerBidAmount;
+      if (coins < instant) return prev;
+      coins -= instant;
+      const slimeMarketAuctions = prev.slimeMarketAuctions.filter((x) => x.id !== auctionId);
+      return {
+        ...prev,
+        coins,
+        slimes: [...prev.slimes, a.slime],
+        slimeMarketAuctions,
+      };
+    });
   };
 
   const toggleBreedingSelection = (id: string) => {
@@ -516,6 +724,47 @@ export default function App() {
       return [...prev, id];
     });
   };
+
+  const handleArenaBattleEnd = useCallback(
+    (payload: {
+      won: boolean;
+      encounter: ArenaEncounter;
+      starterIds: [string, string, string];
+      reserveIds: [string | undefined, string | undefined];
+      arenaAbilityUserIds: string[];
+    }) => {
+      const { won, encounter, starterIds, reserveIds, arenaAbilityUserIds } = payload;
+      const participantIds = [...starterIds, ...reserveIds.filter((x): x is string => x != null)];
+      setState((prev) => {
+        let coins = prev.coins;
+        let slimeCooldownUntil = prev.slimeCooldownUntil;
+        let slimeArenaAbilityCooldownUntil = prev.slimeArenaAbilityCooldownUntil;
+        if (won) {
+          coins += encounter.rewardCoins;
+        } else {
+          const until = Date.now() + ARENA_COOLDOWN_MS;
+          slimeCooldownUntil = { ...prev.slimeCooldownUntil };
+          for (const id of participantIds) {
+            slimeCooldownUntil[id] = until;
+          }
+        }
+        if (arenaAbilityUserIds.length > 0) {
+          const t = Date.now();
+          slimeArenaAbilityCooldownUntil = { ...prev.slimeArenaAbilityCooldownUntil };
+          for (const id of arenaAbilityUserIds) {
+            const slime = prev.slimes.find((x) => x.id === id);
+            if (!slime) continue;
+            const ms = ARENA_ABILITY_META[slime.arenaAbility].cooldownMs;
+            if (ms > 0) {
+              slimeArenaAbilityCooldownUntil[id] = t + ms;
+            }
+          }
+        }
+        return { ...prev, coins, slimeCooldownUntil, slimeArenaAbilityCooldownUntil };
+      });
+    },
+    []
+  );
 
   // Debug Actions
   const debugAddCoins = (amount: number) => {
@@ -587,6 +836,7 @@ export default function App() {
         },
         statLevels: { health: 1, strength: 1, agility: 1 },
         trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+        arenaAbility: rollRandomArenaAbility(),
         level: 1,
         value: 50,
         hatchedAt: Date.now()
@@ -880,6 +1130,42 @@ export default function App() {
                 </div>
               </div>
 
+              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">
+                Phone vibration
+              </p>
+              <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState((s) => {
+                      const next = !s.settings.hapticsEnabled;
+                      if (next) {
+                        triggerPreviewHaptic();
+                      }
+                      return {
+                        ...s,
+                        settings: { ...s.settings, hapticsEnabled: next },
+                      };
+                    })
+                  }
+                  className={`flex shrink-0 items-center justify-center rounded-lg p-2 shadow-sm ${
+                    state.settings.hapticsEnabled
+                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
+                      : 'bg-white/80 text-emerald-800'
+                  }`}
+                  aria-label={
+                    state.settings.hapticsEnabled
+                      ? 'Disable phone vibration on button taps'
+                      : 'Enable phone vibration on button taps'
+                  }
+                >
+                  <Smartphone className="h-4 w-4" />
+                </button>
+                <p className="min-w-0 flex-1 text-xs font-medium leading-snug text-emerald-900/90">
+                  Very light vibration when you tap buttons (native app only).
+                </p>
+              </div>
+
               <div className="flex flex-col gap-1.5">
                 <button
                   type="button"
@@ -908,6 +1194,68 @@ export default function App() {
               <p className="mt-4 text-center text-[10px] leading-tight text-gray-500/90">
                 Music by chajamakesmusic
               </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Offline earnings — welcome back (load or resume with automation) */}
+      <AnimatePresence>
+        {offlineWelcome && hasStarted && (
+          <motion.div
+            key="offline-welcome"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[205] flex items-center justify-center bg-gradient-to-br from-amber-500/95 via-orange-500/90 to-emerald-700/95 p-6 text-center backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.88, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-amber-100/90 bg-gradient-to-b from-white to-orange-50/50 p-6 pt-8 shadow-2xl shadow-emerald-900/25 ring-2 ring-amber-200/60"
+            >
+              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-amber-400 via-lime-400 to-emerald-500" />
+              <motion.div
+                animate={{ rotate: [0, -8, 8, 0], scale: [1, 1.08, 1] }}
+                transition={{ repeat: Infinity, duration: 2.2 }}
+                className="mb-4 flex justify-center"
+              >
+                <Sparkles className="h-14 w-14 text-amber-500 drop-shadow-md" />
+              </motion.div>
+              <h2 className="mb-1 text-2xl font-black text-emerald-950 drop-shadow-sm">
+                Welcome back!
+              </h2>
+              <p className="mb-5 text-sm font-semibold text-emerald-800/85">
+                Your automation kept working while you were away (
+                {formatAwayDuration(offlineWelcome.awayMs)}).
+              </p>
+              <div className="mb-6 flex flex-col items-center gap-2 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50 py-5 shadow-inner">
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-800/90">
+                  <Timer className="h-3.5 w-3.5" aria-hidden />
+                  Coins collected offline
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2.5 shadow-inner ring-2 ring-orange-200/70">
+                    <Coins className="h-7 w-7 text-orange-700" aria-hidden />
+                  </div>
+                  <span className="text-4xl font-black tabular-nums text-emerald-950">
+                    +{offlineWelcome.currencyEarned.toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-emerald-700/80">
+                  {offlineWelcome.idleCoins.toLocaleString()} coin
+                  {offlineWelcome.idleCoins === 1 ? '' : 's'} × value upgrades
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOfflineWelcome(null)}
+                className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 py-4 text-lg font-black text-white shadow-lg shadow-emerald-900/25 ring-2 ring-white/30 transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Collect
+              </button>
             </motion.div>
           </motion.div>
         )}
@@ -964,9 +1312,12 @@ export default function App() {
 
               <div className="bg-white/20 backdrop-blur-sm p-4 rounded-2xl mb-8 w-full max-w-xs">
                 <h3 className="text-white font-black text-xl mb-1">{state.newlyHatchedSlime.name}</h3>
-                <div className="flex justify-center gap-2">
+                <div className="flex flex-wrap justify-center gap-2">
                   <span className="bg-white/30 px-3 py-1 rounded-full text-xs font-bold text-white">
                     {state.newlyHatchedSlime.trait}
+                  </span>
+                  <span className="bg-violet-500/40 px-3 py-1 rounded-full text-xs font-bold text-white ring-1 ring-white/30">
+                    Arena: {ARENA_ABILITY_META[state.newlyHatchedSlime.arenaAbility].name}
                   </span>
                 </div>
               </div>
@@ -1083,7 +1434,7 @@ export default function App() {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="relative w-full max-w-sm overflow-hidden rounded-[2.5rem] border border-emerald-100/90 bg-white p-6 pt-8 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/80"
+              className="relative w-full max-w-md overflow-hidden rounded-[2.5rem] border border-emerald-100/90 bg-white p-6 pt-8 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/80"
               onClick={e => e.stopPropagation()}
             >
               <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-400 via-lime-400 to-orange-400" />
@@ -1122,46 +1473,109 @@ export default function App() {
                   </span>
                 </div>
 
+                {isSlimeOnCooldown(state.slimeCooldownUntil, selectedSlimeDetail.id, nowMs) && (
+                  <div className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-left shadow-sm">
+                    <Timer className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                    <p className="text-[10px] font-bold leading-snug text-amber-950/90">
+                      Arena cooldown: coin bonuses and field bursts are paused for this slime (
+                      {formatSlimeCooldownShort(
+                        Math.max(0, (state.slimeCooldownUntil[selectedSlimeDetail.id] ?? 0) - nowMs)
+                      )}{' '}
+                      left). Unequip and use another slime if you need full bonuses.
+                    </p>
+                  </div>
+                )}
+
                 <div className="mb-4 w-full space-y-4 rounded-[2rem] border border-emerald-100/60 bg-gradient-to-b from-emerald-50/80 to-orange-50/30 p-4">
                   <div className="text-center mb-1">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Ability</p>
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Coin field trait</p>
                     <p className="text-xs font-bold text-gray-600 italic">"{TRAIT_EFFECTS[selectedSlimeDetail.trait].description}"</p>
                   </div>
 
-                  <div className="text-center pt-1">
-                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-[0.15em] border-t border-gray-100 pt-2 mb-1">Tap skills to upgrade</p>
+                  <div className="text-center border-t border-emerald-100/80 pt-3">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Arena ability</p>
+                    <p className="text-xs font-black text-violet-800">
+                      {ARENA_ABILITY_META[selectedSlimeDetail.arenaAbility].name}
+                    </p>
+                    <p className="text-xs font-bold text-gray-600 italic">
+                      "{ARENA_ABILITY_META[selectedSlimeDetail.arenaAbility].description}"
+                    </p>
+                    {isArenaAbilityOnCooldown(
+                      state.slimeArenaAbilityCooldownUntil,
+                      selectedSlimeDetail.id,
+                      nowMs
+                    ) && (
+                      <p className="mt-1.5 text-[10px] font-bold text-violet-600">
+                        Recharging:{' '}
+                        {formatSlimeCooldownShort(
+                          Math.max(
+                            0,
+                            (state.slimeArenaAbilityCooldownUntil[selectedSlimeDetail.id] ?? 0) - nowMs
+                          )
+                        )}{' '}
+                        left
+                      </p>
+                    )}
                   </div>
-                      {/* Stat Upgrade Buttons */}
-                      <div className="grid grid-cols-3 gap-2">
+
+                  <div className="text-center pt-1">
+                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-[0.15em] border-t border-gray-100 pt-2 mb-2">Tap a row to upgrade</p>
+                  </div>
+                      {/* Stat upgrades: horizontal rows, upgrade on the right */}
+                      <div className="flex flex-col gap-2">
                         <button 
+                          type="button"
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'health')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}
-                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-red-100 bg-red-50 p-2 py-4 shadow-sm transition-all hover:border-red-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
+                          className="ui-afford-disabled group flex w-full min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border-2 border-red-100 bg-red-50 px-3 py-2.5 text-left shadow-sm transition-all hover:border-red-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
-                          <div className="mb-2 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
-                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</div>
-                          <div className="mb-2 text-[9px] font-black uppercase text-red-400 group-disabled:text-zinc-500">HP UP</div>
-                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <div className="shrink-0 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
+                            <div className="min-w-0">
+                              <div className="text-[9px] font-black uppercase leading-none text-red-400 group-disabled:text-zinc-500">HP UP</div>
+                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</div>
+                            </div>
+                          </div>
+                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
+                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
+                          </div>
                         </button>
                         <button 
+                          type="button"
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'strength')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}
-                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-orange-100 bg-orange-50 p-2 py-4 shadow-sm transition-all hover:border-orange-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
+                          className="ui-afford-disabled group flex w-full min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border-2 border-orange-100 bg-orange-50 px-3 py-2.5 text-left shadow-sm transition-all hover:border-orange-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
-                          <div className="mb-2 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
-                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</div>
-                          <div className="mb-2 text-[9px] font-black uppercase text-orange-400 group-disabled:text-zinc-500">STR UP</div>
-                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <div className="shrink-0 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
+                            <div className="min-w-0">
+                              <div className="text-[9px] font-black uppercase leading-none text-orange-400 group-disabled:text-zinc-500">STR UP</div>
+                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</div>
+                            </div>
+                          </div>
+                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
+                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
+                          </div>
                         </button>
                         <button 
+                          type="button"
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'agility')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}
-                          className="ui-afford-disabled group relative flex flex-col items-center rounded-2xl border-2 border-blue-100 bg-blue-50 p-2 py-4 shadow-sm transition-all hover:border-blue-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
+                          className="ui-afford-disabled group flex w-full min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border-2 border-blue-100 bg-blue-50 px-3 py-2.5 text-left shadow-sm transition-all hover:border-blue-300 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none"
                         >
-                          <div className="mb-2 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
-                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</div>
-                          <div className="mb-2 text-[9px] font-black uppercase text-blue-400 group-disabled:text-zinc-500">AGI UP</div>
-                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <div className="shrink-0 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
+                            <div className="min-w-0">
+                              <div className="text-[9px] font-black uppercase leading-none text-blue-400 group-disabled:text-zinc-500">AGI UP</div>
+                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</div>
+                            </div>
+                          </div>
+                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
+                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
+                          </div>
                         </button>
                       </div>
                     </div>
@@ -1214,7 +1628,11 @@ export default function App() {
                     automationLevel={state.upgrades.automation}
                     movementSpeedLevel={state.upgrades.movementSpeed}
                     respawnTimeLevel={state.upgrades.respawnTime}
-                    equippedSlimes={state.slimes.filter(s => state.equippedSlimeIds.includes(s.id))}
+                    equippedSlimes={state.slimes.filter(
+                      (s) =>
+                        state.equippedSlimeIds.includes(s.id) &&
+                        !isSlimeOnCooldown(state.slimeCooldownUntil, s.id)
+                    )}
                     insetLeftForWorldNav={state.gameWorldIndex > 0}
                     insetRightForWorldNav={state.maxUnlockedGameWorld > state.gameWorldIndex}
                   />
@@ -1386,20 +1804,22 @@ export default function App() {
                   {/* Buy Section: Below hatching area */}
                   <div className="flex gap-3 w-full max-w-sm">
                     <button 
+                      type="button"
                       onClick={() => buyEgg(1)}
                       disabled={state.coins < EGG_COST}
-                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-amber-200 bg-white py-2 font-black text-amber-900 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-50/50 disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-600"
+                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
-                      <span className="text-[8px] uppercase text-amber-700/90 group-disabled:text-zinc-500">Buy 1</span>
-                      <span className="text-[10px] font-black group-disabled:text-zinc-700">{EGG_COST} 💰</span>
+                      <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 1</span>
+                      <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">{EGG_COST} 💰</span>
                     </button>
                     <button 
+                      type="button"
                       onClick={() => buyEgg(10)}
                       disabled={state.coins < EGG_COST * 10}
                       className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
                       <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 10</span>
-                      <span className="text-[10px] font-black group-disabled:text-zinc-900">{EGG_COST * 10} 💰</span>
+                      <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">{EGG_COST * 10} 💰</span>
                     </button>
                   </div>
                 </div>
@@ -1428,6 +1848,8 @@ export default function App() {
                       isEquipped={state.equippedSlimeIds.includes(slime.id)}
                       onEquip={toggleEquipSlime}
                       onClick={setSelectedSlimeDetail}
+                      cooldownUntil={state.slimeCooldownUntil[slime.id]}
+                      now={nowMs}
                     />
                   ))}
                   {state.slimes.length === 0 && (
@@ -1452,136 +1874,183 @@ export default function App() {
               exit={{ x: -100, opacity: 0 }}
               className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
-              {/* Header with Parent Slots */}
-              <div className="space-y-4 border-b border-emerald-100/80 bg-gradient-to-b from-white via-emerald-50/40 to-orange-50/30 p-4 pt-6 text-center">
-                <div className="flex flex-col items-center">
-                  <Dna className="mb-1 h-10 w-10 text-orange-500 drop-shadow-sm" />
-                  <h3 className="text-lg font-black tracking-widest text-emerald-900 uppercase">Breeding</h3>
-                </div>
+                  {/* Header with Parent Slots */}
+                  <div className="space-y-4 border-b border-emerald-100/80 bg-gradient-to-b from-white via-emerald-50/40 to-orange-50/30 p-4 pt-5 text-center">
+                    <div className="flex flex-col items-center">
+                      <Dna className="mb-1 h-10 w-10 text-orange-500 drop-shadow-sm" />
+                      <h3 className="text-lg font-black tracking-widest text-emerald-900 uppercase">Breeding</h3>
+                    </div>
 
-                <div className="flex items-center justify-center gap-4 py-2">
-                  {[0, 1].map(index => {
-                    const selectedId = breedingSelection[index];
-                    const slime = state.slimes.find(s => s.id === selectedId);
-                    
-                    return (
-                      <div key={index} className="flex flex-col items-center gap-2">
-                        <div className={`flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
-                          slime ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50 shadow-md shadow-emerald-900/5' : 'border-dashed border-emerald-200 bg-white/80'
-                        }`}>
-                          {slime ? (
-                            <div 
-                              className="w-10 h-10 rounded-full shadow-inner flex items-center justify-center relative"
+                    <div className="flex items-center justify-center gap-4 py-2">
+                      {[0, 1].map((index) => {
+                        const selectedId = breedingSelection[index];
+                        const slime = state.slimes.find((s) => s.id === selectedId);
+
+                        return (
+                          <div key={index} className="flex flex-col items-center gap-2">
+                            <div
+                              className={`flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
+                                slime
+                                  ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50 shadow-md shadow-emerald-900/5'
+                                  : 'border-dashed border-emerald-200 bg-white/80'
+                              }`}
+                            >
+                              {slime ? (
+                                <div
+                                  className="relative flex h-10 w-10 items-center justify-center rounded-full shadow-inner"
+                                  style={{ backgroundColor: slime.color }}
+                                >
+                                  <div className="flex gap-1.5">
+                                    <div className="relative h-2 w-2 rounded-full bg-white" />
+                                    <div className="relative h-2 w-2 rounded-full bg-white" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <Plus className="h-6 w-6 text-gray-300" />
+                              )}
+                            </div>
+                            <div className="text-[9px] font-black uppercase tracking-tight text-gray-400">
+                              {slime ? slime.name : `Parent ${index + 1}`}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Scrollable Selection List */}
+                  <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
+                    <div className="grid grid-cols-3 gap-2">
+                      {state.slimes.map((slime) => {
+                        const isSelected = breedingSelection.includes(slime.id);
+                        return (
+                          <button
+                            key={slime.id}
+                            type="button"
+                            onClick={() => toggleBreedingSelection(slime.id)}
+                            className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
+                              isSelected
+                                ? 'border-orange-400 bg-gradient-to-b from-orange-100 to-amber-50 shadow-md ring-2 ring-orange-300/50'
+                                : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
+                            }`}
+                          >
+                            <div
+                              className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-inner"
                               style={{ backgroundColor: slime.color }}
                             >
-                              <div className="flex gap-1.5">
-                                <div className="w-2 h-2 bg-white rounded-full relative" />
-                                <div className="w-2 h-2 bg-white rounded-full relative" />
+                              <div className="flex gap-1">
+                                <div className="relative h-1.5 w-1.5 rounded-full bg-white" />
+                                <div className="relative h-1.5 w-1.5 rounded-full bg-white" />
                               </div>
                             </div>
-                          ) : (
-                            <Plus className="w-6 h-6 text-gray-300" />
-                          )}
-                        </div>
-                        <div className="text-[9px] font-black text-gray-400 uppercase tracking-tight">
-                          {slime ? slime.name : `Parent ${index + 1}`}
-                        </div>
+
+                            <div className="w-full text-center">
+                              <div className="mb-1 truncate text-[9px] font-black leading-none text-gray-800">
+                                {slime.name}
+                              </div>
+
+                              <div className="mt-0.5 grid grid-cols-3 gap-0">
+                                <div className="flex flex-col items-center">
+                                  <Heart className="h-2 w-2 text-red-400" />
+                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.health}</span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                  <Sword className="h-2 w-2 text-orange-400" />
+                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.strength}</span>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                  <Wind className="h-2 w-2 text-blue-400" />
+                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.agility}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {isSelected && (
+                              <div className="absolute right-1 top-1 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-gradient-to-br from-emerald-500 to-orange-500 text-[7px] font-black text-white shadow-md">
+                                {breedingSelection.indexOf(slime.id) + 1}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {state.slimes.length < 2 && (
+                      <div className="flex flex-col items-center gap-3 rounded-[1.5rem] border-2 border-dashed border-orange-200/80 bg-gradient-to-b from-emerald-50/40 to-orange-50/40 px-4 py-12">
+                        <Ghost className="h-8 w-8 text-emerald-300" />
+                        <p className="text-center text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                          Need more slimes!
+                        </p>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Scrollable Selection List */}
-              <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
-                <div className="grid grid-cols-3 gap-2">
-                  {state.slimes.map(slime => {
-                    const isSelected = breedingSelection.includes(slime.id);
-                    return (
-                      <button 
-                        key={slime.id}
-                        onClick={() => toggleBreedingSelection(slime.id)}
-                        className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
-                          isSelected 
-                          ? 'border-orange-400 bg-gradient-to-b from-orange-100 to-amber-50 shadow-md ring-2 ring-orange-300/50' 
-                          : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
-                        }`}
-                      >
-                        <div 
-                          className="w-8 h-8 rounded-full shadow-inner flex items-center justify-center relative"
-                          style={{ backgroundColor: slime.color }}
-                        >
-                          <div className="flex gap-1">
-                            <div className="w-1.5 h-1.5 bg-white rounded-full relative" />
-                            <div className="w-1.5 h-1.5 bg-white rounded-full relative" />
-                          </div>
-                        </div>
-                        
-                        <div className="text-center w-full">
-                          <div className="text-[9px] font-black text-gray-800 truncate leading-none mb-1">{slime.name}</div>
-                          
-                          {/* Mini Stats Grid */}
-                          <div className="grid grid-cols-3 gap-0 mt-0.5">
-                            <div className="flex flex-col items-center">
-                              <Heart className="w-2 h-2 text-red-400" />
-                              <span className="text-[6px] font-black text-gray-500">{slime.stats.health}</span>
-                            </div>
-                            <div className="flex flex-col items-center">
-                              <Sword className="w-2 h-2 text-orange-400" />
-                              <span className="text-[6px] font-black text-gray-500">{slime.stats.strength}</span>
-                            </div>
-                            <div className="flex flex-col items-center">
-                              <Wind className="w-2 h-2 text-blue-400" />
-                              <span className="text-[6px] font-black text-gray-500">{slime.stats.agility}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {isSelected && (
-                          <div className="absolute top-1 right-1 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-gradient-to-br from-emerald-500 to-orange-500 text-[7px] font-black text-white shadow-md">
-                            {breedingSelection.indexOf(slime.id) + 1}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                {state.slimes.length < 2 && (
-                  <div className="flex flex-col items-center gap-3 rounded-[1.5rem] border-2 border-dashed border-orange-200/80 bg-gradient-to-b from-emerald-50/40 to-orange-50/40 px-4 py-12">
-                    <Ghost className="h-8 w-8 text-emerald-300" />
-                    <p className="text-center text-[10px] font-bold tracking-wider text-emerald-600 uppercase">Need more slimes!</p>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Breeds action — flex footer (no absolute overlay on the grid) */}
-              <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
-                <div className="mx-auto flex w-full max-w-sm justify-center">
-                  <button
-                    type="button"
-                    onClick={breedSlimes}
-                    disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                    className="ui-afford-disabled group flex w-full flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
-                  >
-                    <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Breed Slimes</span>
-                    <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">
-                      {BREEDING_COST.toLocaleString()} 💰
-                    </span>
-                  </button>
-                </div>
-              </div>
+                  <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
+                    <div className="mx-auto flex w-full max-w-sm justify-center">
+                      <button
+                        type="button"
+                        onClick={breedSlimes}
+                        disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
+                        className="ui-afford-disabled group flex w-full flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                      >
+                        <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">
+                          Breed Slimes
+                        </span>
+                        <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">
+                          {BREEDING_COST.toLocaleString()} 💰
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+            </motion.div>
+          )}
+
+          {state.activeTab === 'slimeMarket' && (
+            <motion.div
+              key="slimeMarket"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -100, opacity: 0 }}
+              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+            >
+              <SlimeMarketPanel
+                coins={state.coins}
+                slimes={state.slimes}
+                trend={getSlimeMarketTrend(Math.floor(Date.now() / 86_400_000))}
+                auctions={state.slimeMarketAuctions}
+                onListSlime={listSlimeForAuction}
+                onBid={placeMarketBid}
+                onInstantBuy={placeMarketInstantBuy}
+              />
+            </motion.div>
+          )}
+
+          {state.activeTab === 'arena' && (
+            <motion.div
+              key="arena"
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -100, opacity: 0 }}
+              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+            >
+              <SlimeArenaPanel
+                slimes={state.slimes}
+                slimeCooldownUntil={state.slimeCooldownUntil}
+                slimeArenaAbilityCooldownUntil={state.slimeArenaAbilityCooldownUntil}
+                now={nowMs}
+                onBattleEnd={handleArenaBattleEnd}
+              />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market */}
+      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Slime Market */}
       <div
         className={
           isGameTab
-            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-around p-2 pb-nav-safe'
-            : 'glass-nav-page relative z-50 flex items-center justify-around p-2 pb-nav-safe'
+            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-around gap-0.5 p-1.5 pb-nav-safe'
+            : 'glass-nav-page relative z-50 flex items-center justify-around gap-0.5 p-1.5 pb-nav-safe'
         }
       >
         <NavButton 
@@ -1598,8 +2067,19 @@ export default function App() {
         <NavButton 
           active={state.activeTab === 'market'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
-          icon={<ShoppingBag />}
-          hasNotification={hasMarketNotification}
+          icon={<Dna />}
+          hasNotification={hasBreedingNotification}
+        />
+        <NavButton 
+          active={state.activeTab === 'slimeMarket'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'slimeMarket' }))}
+          icon={<Gavel />}
+          hasNotification={hasSlimeMarketTabNotification}
+        />
+        <NavButton 
+          active={state.activeTab === 'arena'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'arena' }))}
+          icon={<Swords />}
         />
       </div>
 
@@ -1738,16 +2218,28 @@ function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: U
   );
 }
 
+function formatSlimeCooldownShort(ms: number): string {
+  const sec = Math.ceil(ms / 1000);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m <= 0) return `${s}s`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 const SlimeCard: React.FC<{ 
   slime: Slime; 
   coins: number;
   isEquipped: boolean; 
   onEquip: (id: string) => void;
   onClick: (slime: Slime) => void;
-}> = ({ slime, coins, isEquipped, onEquip, onClick }) => {
+  cooldownUntil?: number;
+  now: number;
+}> = ({ slime, coins, isEquipped, onEquip, onClick, cooldownUntil = 0, now }) => {
   const hasAffordableStatUpgrade = (['health', 'strength', 'agility'] as const).some(
     (stat) => coins >= SLIME_UPGRADE_COST(slime.statLevels[stat])
   );
+  const onCd = cooldownUntil > now;
+  const cdLeft = onCd ? cooldownUntil - now : 0;
   return (
     <motion.div 
       initial={{ scale: 0.9, opacity: 0 }}
@@ -1757,12 +2249,23 @@ const SlimeCard: React.FC<{
         isEquipped ? 'border-orange-200 bg-gradient-to-b from-amber-50 to-orange-50 ring-1 ring-orange-200/60' : 'border-emerald-100/80 bg-white hover:border-orange-200/60'
       }`}
     >
+      {onCd && (
+        <div
+          className="pointer-events-none absolute -left-0.5 -top-0.5 z-10 flex max-w-[calc(100%+4px)] items-center gap-0.5 rounded-md bg-zinc-800/92 px-1 py-0.5 text-[7px] font-black text-amber-100 shadow-md ring-1 ring-white/40"
+          title="Arena cooldown"
+        >
+          <Timer className="h-2.5 w-2.5 shrink-0" aria-hidden />
+          {formatSlimeCooldownShort(cdLeft)}
+        </div>
+      )}
       {hasAffordableStatUpgrade && (
         <div
-          className="pointer-events-none absolute -right-0.5 -top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white"
+          className={`pointer-events-none absolute z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white ${
+            onCd ? 'bottom-0.5 right-0.5' : '-right-0.5 -top-0.5'
+          }`}
           aria-hidden
         >
-          <ArrowUpRight className="h-3 w-3" strokeWidth={2.75} />
+          <ArrowUp className="h-3 w-3" strokeWidth={2.75} />
         </div>
       )}
       <div 
