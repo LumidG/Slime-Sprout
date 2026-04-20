@@ -395,12 +395,16 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     // Draw
     ctx.clearRect(0, 0, width, height);
 
-    // Draw Grass (simple pattern)
-    ctx.fillStyle = '#86EFAC'; // Lighter Green (Tailwind green-300)
+    // Playfield: soft emerald → warm amber (matches app shell)
+    const fieldGrad = ctx.createLinearGradient(0, 0, width, height);
+    fieldGrad.addColorStop(0, '#6ee7b7');
+    fieldGrad.addColorStop(0.48, '#86efac');
+    fieldGrad.addColorStop(1, '#fde68a');
+    ctx.fillStyle = fieldGrad;
     ctx.fillRect(0, 0, width, height);
-    
-    // Draw subtle grass tufts
-    ctx.strokeStyle = '#4ADE80'; // Medium Green (Tailwind green-400)
+
+    // Subtle grass tufts
+    ctx.strokeStyle = '#34d399';
     ctx.lineWidth = 1;
     for(let i=0; i<width; i+=40) {
       for(let j=0; j<height; j+=40) {
@@ -419,6 +423,12 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       ctx.save();
       ctx.translate(coin.x, coin.y);
       ctx.scale(coin.scale, coin.scale);
+
+      // Drop shadow (same language as player ground shadow)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.beginPath();
+      ctx.ellipse(1, 10, 7, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
       
       // Golden Coin Shape
       ctx.fillStyle = '#FACC15'; // Gold Yellow
@@ -651,7 +661,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         // Progress
         const t = timeNow % cycleTime;
         let progress = 0;
-        let color = '#9333EA'; // Purple for active
+        let color = '#f97316'; // Orange accent (complements green field)
         
         if (isTraitCycleActive) {
           // Fill up during active burst (0 to 1 in 5s)
@@ -755,7 +765,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   });
 
   return (
-    <div ref={containerRef} className="relative h-full min-h-0 w-full overflow-hidden" style={{ backgroundColor: '#86EFAC' }}>
+    <div ref={containerRef} className="bg-app-game relative h-full min-h-0 w-full overflow-hidden">
       <canvas
         ref={canvasRef}
         onPointerDown={handlePointerDown}

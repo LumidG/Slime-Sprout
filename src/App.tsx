@@ -425,22 +425,22 @@ export default function App() {
 
   if (isLoading && loadingProgress < 100) {
     return (
-      <div className="flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 select-none" style={{ backgroundColor: '#86EFAC' }}>
+      <div className="bg-app-splash flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 select-none">
         <motion.h1 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="text-4xl font-bold text-green-800 mb-8"
+          className="mb-8 bg-gradient-to-br from-emerald-900 to-teal-800 bg-clip-text text-4xl font-bold text-transparent drop-shadow-sm"
         >
           Slime Sprouts
         </motion.h1>
-        <div className="w-full max-w-xs h-4 bg-white/30 rounded-full overflow-hidden border-2 border-green-800 backdrop-blur-sm">
+        <div className="h-4 w-full max-w-xs overflow-hidden rounded-full border-2 border-white/40 bg-white/25 shadow-inner backdrop-blur-sm">
           <motion.div 
-            className="h-full bg-green-500"
+            className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-lime-400 to-orange-400"
             initial={{ width: 0 }}
             animate={{ width: `${loadingProgress}%` }}
           />
         </div>
-        <p className="mt-4 text-green-600 font-medium">Loading {loadingProgress}%</p>
+        <p className="mt-4 font-medium text-emerald-900/80">Loading {loadingProgress}%</p>
       </div>
     );
   }
@@ -448,21 +448,20 @@ export default function App() {
   if (!hasStarted) {
     return (
       <div 
-        className="flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 cursor-pointer select-none"
-        style={{ backgroundColor: '#86EFAC' }}
+        className="bg-app-splash flex h-full min-h-[100dvh] w-full cursor-pointer flex-col items-center justify-center p-8 select-none"
         onClick={() => setHasStarted(true)}
       >
         <motion.h1 
           animate={{ y: [0, -10, 0] }}
           transition={{ repeat: Infinity, duration: 2 }}
-          className="text-5xl font-bold text-green-800 mb-4 text-center"
+          className="mb-4 bg-gradient-to-br from-emerald-900 via-teal-800 to-orange-800 bg-clip-text text-center text-5xl font-bold text-transparent"
         >
           Slime Sprouts
         </motion.h1>
         <motion.p 
           animate={{ opacity: [0.4, 1, 0.4] }}
           transition={{ repeat: Infinity, duration: 1.5 }}
-          className="text-green-600 text-xl font-bold mt-12"
+          className="mt-12 text-xl font-bold text-emerald-900/85"
         >
           Tap to continue
         </motion.p>
@@ -472,7 +471,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex h-full min-h-[100dvh] w-full flex-col overflow-hidden relative select-none ${isGameTab ? 'bg-[#86EFAC]' : 'bg-white'}`}
+      className={`relative flex h-full min-h-[100dvh] w-full flex-col overflow-hidden select-none ${isGameTab ? 'bg-app-game' : 'bg-app-page'}`}
     >
       {/* Onboarding Overlay */}
       <AnimatePresence>
@@ -481,14 +480,15 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-end justify-center p-6 pb-24"
+            className="absolute inset-0 z-[200] flex items-end justify-center bg-emerald-950/35 p-6 pb-24 backdrop-blur-sm"
           >
             <motion.div 
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              className="bg-white w-full rounded-3xl p-6 shadow-2xl relative"
+              className="relative w-full overflow-hidden rounded-3xl border border-emerald-100/90 bg-white p-6 pt-7 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/90"
             >
-              <div className="absolute -top-16 left-6 w-20 h-20 bg-green-400 rounded-full shadow-lg flex items-center justify-center border-4 border-white">
+              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-400 via-lime-400 to-orange-400" />
+              <div className="absolute -top-16 left-6 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-lime-300 shadow-lg shadow-emerald-600/20">
                 <div className="flex gap-2">
                   <div className="w-2 h-2 bg-white rounded-full relative">
                     <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
@@ -501,7 +501,7 @@ export default function App() {
               
               <div className="pt-4">
                 <h3 className="text-lg font-black text-gray-800 mb-2 flex items-center gap-2">
-                  <MessageCircle className="w-5 h-5 text-green-500" />
+                  <MessageCircle className="h-5 w-5 text-orange-500" />
                   Glim
                 </h3>
                 <p className="text-gray-600 font-medium leading-relaxed mb-6">
@@ -513,13 +513,13 @@ export default function App() {
                     {onboardingMessages.map((_, i) => (
                       <div 
                         key={i} 
-                        className={`h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-6 bg-green-500' : 'w-2 bg-gray-200'}`} 
+                        className={`h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-6 bg-gradient-to-r from-emerald-500 to-orange-400' : 'w-2 bg-gray-200'}`} 
                       />
                     ))}
                   </div>
                   <button 
                     onClick={nextOnboarding}
-                    className="px-6 py-3 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all"
+                    className="btn-primary-glow rounded-xl px-6 py-3 hover:scale-105 active:scale-95"
                   >
                     {onboardingStep === onboardingMessages.length - 1 ? "Got it!" : "Next"}
                   </button>
@@ -534,23 +534,23 @@ export default function App() {
       <div
         className={
           isGameTab
-            ? 'pointer-events-none absolute top-0 left-0 right-0 z-30 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b border-white/10 bg-white/40 px-2 pt-header-safe pb-3 backdrop-blur-md'
-            : 'relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center border-b bg-white/80 px-2 pt-header-safe pb-3 backdrop-blur-md'
+            ? 'glass-header-game pointer-events-none absolute top-0 right-0 left-0 z-30 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
+            : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
         }
       >
         <button
           type="button"
           onClick={() => setIsDebugOpen(true)}
-          className="pointer-events-auto justify-self-start p-2 text-gray-300 transition-colors hover:text-red-400"
+          className="pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600"
           aria-label="Debug menu"
         >
           <Bug className="h-4 w-4" />
         </button>
         <div className="flex items-center justify-center gap-2">
-          <div className="rounded-full bg-yellow-100 p-2">
-            <CircleDollarSign className="h-5 w-5 text-yellow-600" />
+          <div className="rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner ring-2 ring-orange-200/60">
+            <CircleDollarSign className="h-5 w-5 text-orange-700" />
           </div>
-          <span className="text-xl font-bold tabular-nums text-gray-800">{state.coins.toLocaleString()}</span>
+          <span className="text-xl font-bold tabular-nums text-emerald-950">{state.coins.toLocaleString()}</span>
         </div>
         <div aria-hidden="true" />
       </div>
@@ -562,7 +562,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-green-500/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 text-center"
+            className="absolute inset-0 z-[110] flex items-center justify-center bg-gradient-to-br from-emerald-600/95 via-green-600/90 to-orange-400/90 p-6 text-center backdrop-blur-md"
           >
             <motion.div 
               initial={{ scale: 0.5, y: 50 }}
@@ -574,11 +574,11 @@ export default function App() {
                 transition={{ repeat: Infinity, duration: 2 }}
                 className="mb-8"
               >
-                <PartyPopper className="w-16 h-16 text-white mb-4" />
+                <PartyPopper className="mb-4 h-16 w-16 text-amber-100 drop-shadow-md" />
               </motion.div>
               
-              <h2 className="text-4xl font-black text-white mb-2">NEW SLIME!</h2>
-              <p className="text-green-100 font-bold mb-8">A beautiful new friend has joined your collection!</p>
+              <h2 className="mb-2 text-4xl font-black text-white drop-shadow-sm">NEW SLIME!</h2>
+              <p className="mb-8 font-bold text-emerald-50">A beautiful new friend has joined your collection!</p>
 
               <div className="relative mb-8">
                 <motion.div 
@@ -615,7 +615,7 @@ export default function App() {
 
               <button 
                 onClick={() => setState(s => ({ ...s, newlyHatchedSlime: null }))}
-                className="px-12 py-4 bg-white text-green-600 font-black rounded-2xl shadow-xl hover:scale-105 transition-transform"
+                className="rounded-2xl bg-white px-12 py-4 font-black text-orange-600 shadow-xl ring-2 ring-orange-200/80 transition-transform hover:scale-105"
               >
                 AWESOME!
               </button>
@@ -631,16 +631,17 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6"
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-emerald-950/50 p-6 backdrop-blur-sm"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-white w-full max-w-xs rounded-3xl p-6 shadow-2xl"
+              className="relative w-full max-w-xs overflow-hidden rounded-3xl border border-emerald-100/90 bg-gradient-to-b from-white to-orange-50/40 p-6 pt-7 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/70"
             >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
-                  <Bug className="text-red-500" /> Debug Menu
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-orange-400" />
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-xl font-black text-gray-800">
+                  <Bug className="text-orange-500" /> Debug Menu
                 </h2>
                 <button onClick={() => setIsDebugOpen(false)} className="text-gray-400">
                   <ChevronRight className="rotate-90" />
@@ -648,22 +649,22 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                <div className="p-3 bg-gray-50 rounded-2xl">
-                  <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Currency</p>
+                <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/50 p-3">
+                  <p className="mb-2 text-[10px] font-black text-emerald-600/80 uppercase">Currency</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => debugAddCoins(1000)} className="py-2 bg-yellow-100 text-yellow-700 rounded-xl text-xs font-bold">+1k 💰</button>
-                    <button onClick={() => debugAddCoins(10000)} className="py-2 bg-yellow-200 text-yellow-800 rounded-xl text-xs font-bold">+10k 💰</button>
+                    <button onClick={() => debugAddCoins(1000)} className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 py-2 text-xs font-bold text-orange-800">+1k 💰</button>
+                    <button onClick={() => debugAddCoins(10000)} className="rounded-xl bg-gradient-to-br from-amber-200 to-orange-200 py-2 text-xs font-bold text-orange-900">+10k 💰</button>
                   </div>
                 </div>
 
-                <div className="p-3 bg-gray-50 rounded-2xl">
-                  <p className="text-[10px] font-black text-gray-400 uppercase mb-2">Items</p>
+                <div className="rounded-2xl border border-orange-100/80 bg-orange-50/40 p-3">
+                  <p className="mb-2 text-[10px] font-black text-orange-700/90 uppercase">Items</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => debugAddEggs(1)} className="py-2 bg-blue-100 text-blue-700 rounded-xl text-xs font-bold">+1 Egg 🥚</button>
-                    <button onClick={() => debugAddEggs(10)} className="py-2 bg-blue-200 text-blue-800 rounded-xl text-xs font-bold">+10 Eggs 🥚</button>
+                    <button onClick={() => debugAddEggs(1)} className="rounded-xl bg-emerald-100 py-2 text-xs font-bold text-emerald-800">+1 Egg 🥚</button>
+                    <button onClick={() => debugAddEggs(10)} className="rounded-xl bg-teal-100 py-2 text-xs font-bold text-teal-800">+10 Eggs 🥚</button>
                     <button 
                       onClick={debugAddSlime} 
-                      className="col-span-2 py-2 bg-purple-100 text-purple-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
+                      className="col-span-2 flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-emerald-200 to-lime-100 py-2 text-xs font-bold text-emerald-900"
                     >
                       <Sparkles className="w-3 h-3" /> Add Random Slime
                     </button>
@@ -672,22 +673,22 @@ export default function App() {
 
                 <button 
                   onClick={debugUnlockAll}
-                  className="w-full py-3 bg-green-100 text-green-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-100 py-3 text-sm font-bold text-emerald-800"
                 >
-                  <Zap className="w-4 h-4" /> Max Upgrades
+                  <Zap className="h-4 w-4" /> Max Upgrades
                 </button>
 
                 <button 
                   onClick={debugReset}
-                  className="w-full py-3 bg-red-100 text-red-700 rounded-2xl text-sm font-bold flex items-center justify-center gap-2"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 py-3 text-sm font-bold text-red-700"
                 >
-                  <Trash2 className="w-4 h-4" /> Reset Game
+                  <Trash2 className="h-4 w-4" /> Reset Game
                 </button>
               </div>
 
               <button 
                 onClick={() => setIsDebugOpen(false)}
-                className="w-full mt-6 py-4 bg-gray-800 text-white rounded-2xl font-bold"
+                className="mt-6 w-full rounded-2xl bg-gradient-to-r from-emerald-700 to-teal-800 py-4 font-bold text-white shadow-lg shadow-emerald-900/20"
               >
                 Close
               </button>
@@ -703,19 +704,20 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-6"
+            className="absolute inset-0 z-[150] flex items-center justify-center bg-emerald-950/45 p-6 backdrop-blur-sm"
             onClick={() => setSelectedSlimeDetail(null)}
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative"
+              className="relative w-full max-w-sm overflow-hidden rounded-[2.5rem] border border-emerald-100/90 bg-white p-6 pt-8 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/80"
               onClick={e => e.stopPropagation()}
             >
+              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-400 via-lime-400 to-orange-400" />
               <button 
                 onClick={() => setSelectedSlimeDetail(null)}
-                className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full text-gray-400 hover:text-gray-600"
+                className="absolute top-4 right-4 rounded-full bg-gradient-to-br from-emerald-50 to-orange-50 p-2 text-emerald-400 transition-colors hover:text-orange-500"
               >
                 <Plus className="w-5 h-5 rotate-45" />
               </button>
@@ -740,15 +742,15 @@ export default function App() {
 
                 <h3 className="text-xl font-black text-gray-800 mb-1">{selectedSlimeDetail.name}</h3>
                 <div className="flex gap-2 mb-4">
-                  <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">
+                  <span className="rounded-full bg-gradient-to-r from-violet-100 to-purple-100 px-2 py-0.5 text-[9px] font-black text-purple-700 uppercase">
                     Level {selectedSlimeDetail.level}
                   </span>
-                  <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">
+                  <span className="rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 py-0.5 text-[9px] font-black text-emerald-700 uppercase">
                     {selectedSlimeDetail.trait}
                   </span>
                 </div>
 
-                <div className="w-full bg-gray-50 rounded-[2rem] p-4 mb-4 space-y-4">
+                <div className="mb-4 w-full space-y-4 rounded-[2rem] border border-emerald-100/60 bg-gradient-to-b from-emerald-50/80 to-orange-50/30 p-4">
                   <div className="text-center mb-1">
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Ability</p>
                     <p className="text-xs font-bold text-gray-600 italic">"{TRAIT_EFFECTS[selectedSlimeDetail.trait].description}"</p>
@@ -762,32 +764,32 @@ export default function App() {
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'health')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}
-                          className="group relative bg-red-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-red-100 hover:border-red-300 disabled:opacity-50 transition-all shadow-sm"
+                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-red-50 p-2 py-4 shadow-sm transition-all hover:border-red-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-red-100"
                         >
-                          <div className="text-red-500 mb-2 group-active:scale-110 transition-transform"><Heart className="w-6 h-6" /></div>
-                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.health}</div>
-                          <div className="text-[9px] font-black text-red-400 uppercase mb-2">HP UP</div>
-                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
+                          <div className="mb-2 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
+                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</div>
+                          <div className="mb-2 text-[9px] font-black uppercase text-red-400 group-disabled:text-zinc-500">HP UP</div>
+                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
                         </button>
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'strength')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}
-                          className="group relative bg-orange-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-orange-100 hover:border-orange-300 disabled:opacity-50 transition-all shadow-sm"
+                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-orange-50 p-2 py-4 shadow-sm transition-all hover:border-orange-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-orange-100"
                         >
-                          <div className="text-orange-500 mb-2 group-active:scale-110 transition-transform"><Sword className="w-6 h-6" /></div>
-                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.strength}</div>
-                          <div className="text-[9px] font-black text-orange-400 uppercase mb-2">STR UP</div>
-                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
+                          <div className="mb-2 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
+                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</div>
+                          <div className="mb-2 text-[9px] font-black uppercase text-orange-400 group-disabled:text-zinc-500">STR UP</div>
+                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
                         </button>
                         <button 
                           onClick={() => upgradeSlimeStat(selectedSlimeDetail.id, 'agility')}
                           disabled={state.coins < SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}
-                          className="group relative bg-blue-50 p-2 py-4 rounded-2xl flex flex-col items-center border-2 border-blue-100 hover:border-blue-300 disabled:opacity-50 transition-all shadow-sm"
+                          className="group relative flex flex-col items-center rounded-2xl border-2 bg-blue-50 p-2 py-4 shadow-sm transition-all hover:border-blue-300 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:shadow-none border-blue-100"
                         >
-                          <div className="text-blue-500 mb-2 group-active:scale-110 transition-transform"><Wind className="w-6 h-6" /></div>
-                          <div className="text-sm font-black text-gray-800 leading-none mb-0.5">{selectedSlimeDetail.stats.agility}</div>
-                          <div className="text-[9px] font-black text-blue-400 uppercase mb-2">AGI UP</div>
-                          <div className="text-[10px] font-black text-yellow-700 bg-white px-2 py-0.5 rounded-lg border border-yellow-100 shadow-sm">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
+                          <div className="mb-2 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
+                          <div className="mb-0.5 text-sm font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</div>
+                          <div className="mb-2 text-[9px] font-black uppercase text-blue-400 group-disabled:text-zinc-500">AGI UP</div>
+                          <div className="rounded-lg border border-yellow-100 bg-white px-2 py-0.5 text-[10px] font-black text-amber-900 shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-50 group-disabled:text-zinc-700">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
                         </button>
                       </div>
                     </div>
@@ -797,10 +799,10 @@ export default function App() {
                         onClick={() => {
                           toggleEquipSlime(selectedSlimeDetail.id);
                         }}
-                        className={`w-full py-3 rounded-xl font-black uppercase tracking-widest shadow-md transition-all text-xs ${
+                        className={`w-full rounded-xl py-3 text-xs font-black tracking-widest transition-all ${
                           state.equippedSlimeIds.includes(selectedSlimeDetail.id)
-                          ? 'bg-red-500 text-white hover:bg-red-600'
-                          : 'bg-green-500 text-white hover:bg-green-600'
+                          ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md hover:brightness-105'
+                          : 'btn-primary-glow shadow-md'
                         }`}
                       >
                         {state.equippedSlimeIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
@@ -813,7 +815,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content Area — game fills viewport under floating chrome */}
-      <div className={`min-h-0 flex-1 relative overflow-hidden ${isGameTab ? 'bg-transparent' : 'bg-gray-50'}`}>
+      <div className={`relative min-h-0 flex-1 overflow-hidden ${isGameTab ? 'bg-transparent' : ''}`}>
         <AnimatePresence mode="wait">
           {state.activeTab === 'game' && (
             <motion.div 
@@ -834,7 +836,7 @@ export default function App() {
               {/* Upgrades Toggle Button */}
               <button 
                 onClick={() => setIsUpgradesOpen(!isUpgradesOpen)}
-                className="game-hud-upgrade absolute right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50 z-20 text-green-600 hover:scale-110 transition-transform"
+                className="game-hud-upgrade absolute right-4 z-20 rounded-2xl border border-orange-200/50 bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
               >
                 <TrendingUp className={`w-6 h-6 transition-transform ${isUpgradesOpen ? 'rotate-180' : ''}`} />
                 {canAffordAnyGameUpgrade && (
@@ -849,15 +851,15 @@ export default function App() {
                     initial={{ y: 300, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     exit={{ y: 300, opacity: 0 }}
-                    className="game-upgrades-sheet absolute left-4 right-4 bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-xl border border-white/50 z-20"
+                    className="game-upgrades-sheet absolute right-4 left-4 z-20 rounded-2xl border border-emerald-200/60 bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
                   >
                     <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4" /> Upgrades
+                      <h3 className="flex items-center gap-2 font-bold text-emerald-900">
+                        <TrendingUp className="h-4 w-4 text-orange-500" /> Upgrades
                       </h3>
                       <button 
                         onClick={() => setIsUpgradesOpen(false)}
-                        className="text-gray-400 hover:text-gray-600"
+                        className="text-emerald-400 transition-colors hover:text-orange-500"
                       >
                         <ChevronRight className="w-5 h-5 rotate-90" />
                       </button>
@@ -912,7 +914,7 @@ export default function App() {
               className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
               {/* Upper Half: Eggs and Hatching */}
-              <div className="flex-none p-3 bg-gradient-to-b from-yellow-50/50 to-white border-b border-gray-100 min-h-[160px] flex flex-col justify-center">
+              <div className="flex min-h-[160px] flex-none flex-col justify-center border-b border-emerald-100/80 bg-gradient-to-b from-emerald-100/90 via-orange-50/50 to-white p-3">
                 <div className="flex flex-col items-center justify-center gap-3">
                   {/* Middle: Hatching Area */}
                   <div className="flex flex-col items-center justify-center relative h-36">
@@ -928,7 +930,7 @@ export default function App() {
                           {state.eggs > 0 ? (
                             <button 
                               onClick={startHatching}
-                              className="text-[9px] font-black bg-green-500 text-white px-4 py-1.5 rounded-full shadow-md animate-pulse hover:bg-green-600 transition-colors"
+                              className="btn-primary-glow animate-pulse rounded-full px-4 py-1.5 text-[9px] font-black"
                             >
                               HATCH NOW
                             </button>
@@ -1021,13 +1023,13 @@ export default function App() {
                           </div>
                         </motion.div>
                         <div className="flex flex-col items-center">
-                          <div className="w-32 h-1 bg-gray-200 rounded-full mt-0 overflow-hidden border border-gray-100 shadow-inner">
+                          <div className="mt-0 h-1 w-32 overflow-hidden rounded-full border border-orange-100 bg-white/80 shadow-inner">
                             <motion.div 
-                              className="h-full bg-green-500"
+                              className="h-full bg-gradient-to-r from-emerald-500 to-orange-400"
                               animate={{ width: `${state.hatchingEgg.progress}%` }}
                             />
                           </div>
-                          <p className="mt-0.5 text-[8px] font-black text-green-600 uppercase tracking-tighter">{state.hatchingEgg.progress}% Hatched</p>
+                          <p className="mt-0.5 text-[8px] font-black text-emerald-700 uppercase tracking-tighter">{state.hatchingEgg.progress}% Hatched</p>
                         </div>
                       </div>
                     )}
@@ -1038,18 +1040,18 @@ export default function App() {
                     <button 
                       onClick={() => buyEgg(1)}
                       disabled={state.coins < EGG_COST}
-                      className="flex-1 py-2 bg-white border-2 border-yellow-200 hover:border-yellow-400 hover:bg-yellow-50 disabled:opacity-50 text-yellow-700 font-black rounded-xl shadow-sm transition-all flex flex-col items-center justify-center group"
+                      className="group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-amber-200 bg-white py-2 font-black text-amber-900 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-50/50 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-600"
                     >
-                      <span className="text-[8px] uppercase opacity-70">Buy 1</span>
-                      <span className="text-[10px] font-black">{EGG_COST} 💰</span>
+                      <span className="text-[8px] uppercase text-amber-700/90 group-disabled:text-zinc-500">Buy 1</span>
+                      <span className="text-[10px] font-black group-disabled:text-zinc-700">{EGG_COST} 💰</span>
                     </button>
                     <button 
                       onClick={() => buyEgg(10)}
                       disabled={state.coins < EGG_COST * 10}
-                      className="flex-1 py-2 bg-yellow-400 border-2 border-yellow-500 hover:bg-yellow-500 disabled:bg-gray-100 disabled:border-gray-200 disabled:opacity-50 text-white disabled:text-gray-400 font-black rounded-xl shadow-md transition-all flex flex-col items-center justify-center group"
+                      className="group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900"
                     >
-                      <span className="text-[8px] uppercase opacity-90">Buy 10</span>
-                      <span className="text-[10px] font-black">{EGG_COST * 10} 💰</span>
+                      <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 10</span>
+                      <span className="text-[10px] font-black group-disabled:text-zinc-900">{EGG_COST * 10} 💰</span>
                     </button>
                   </div>
                 </div>
@@ -1058,12 +1060,12 @@ export default function App() {
               {/* Lower Half: Collection Overview */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="text-[10px] font-black text-gray-800 uppercase tracking-widest flex items-center gap-1.5">
-                    <Ghost className="w-4 h-4 text-green-500" /> My Collection ({state.slimes.length})
+                  <h3 className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-gray-800 uppercase">
+                    <Ghost className="h-4 w-4 text-emerald-600" /> My Collection ({state.slimes.length})
                   </h3>
-                  <div className="bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="text-[8px] font-black text-green-600 uppercase">Equipped</span>
-                    <p className="text-[9px] font-black text-green-700 uppercase">
+                  <div className="flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-100 to-orange-100 px-2 py-0.5 ring-1 ring-orange-200/60">
+                    <span className="text-[8px] font-black text-emerald-800 uppercase">Equipped</span>
+                    <p className="text-[9px] font-black text-orange-800 uppercase">
                       {state.equippedSlimeIds.length}/{MAX_EQUIPPED_SLIMES}
                     </p>
                   </div>
@@ -1080,8 +1082,8 @@ export default function App() {
                     />
                   ))}
                   {state.slimes.length === 0 && (
-                    <div className="col-span-3 text-center py-16 bg-white rounded-3xl border-2 border-dashed border-gray-100 flex flex-col items-center gap-3">
-                      <Ghost className="w-12 h-12 text-gray-200" />
+                    <div className="col-span-3 flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-emerald-200/80 bg-gradient-to-b from-emerald-50/50 to-orange-50/30 py-16 text-center">
+                      <Ghost className="h-12 w-12 text-emerald-200" />
                       <div>
                         <p className="text-gray-400 font-medium">No slimes yet.</p>
                         <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Buy and hatch your first egg!</p>
@@ -1102,21 +1104,21 @@ export default function App() {
               className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
               {/* Header with Parent Slots */}
-              <div className="p-4 pt-6 text-center space-y-4 bg-white border-b border-purple-50">
+              <div className="space-y-4 border-b border-emerald-100/80 bg-gradient-to-b from-white via-emerald-50/40 to-orange-50/30 p-4 pt-6 text-center">
                 <div className="flex flex-col items-center">
-                  <Dna className="w-10 h-10 text-purple-400 mb-1" />
-                  <h3 className="text-lg font-black text-gray-800 uppercase tracking-widest">Breeding</h3>
+                  <Dna className="mb-1 h-10 w-10 text-orange-500 drop-shadow-sm" />
+                  <h3 className="text-lg font-black tracking-widest text-emerald-900 uppercase">Breeding</h3>
                 </div>
 
-                <div className="flex justify-center items-center gap-4 py-2">
+                <div className="flex items-center justify-center gap-4 py-2">
                   {[0, 1].map(index => {
                     const selectedId = breedingSelection[index];
                     const slime = state.slimes.find(s => s.id === selectedId);
                     
                     return (
                       <div key={index} className="flex flex-col items-center gap-2">
-                        <div className={`w-16 h-16 rounded-3xl border-2 flex items-center justify-center transition-all ${
-                          slime ? 'border-purple-300 bg-purple-50 shadow-sm' : 'border-dashed border-gray-200 bg-gray-50'
+                        <div className={`flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
+                          slime ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50 shadow-md shadow-emerald-900/5' : 'border-dashed border-emerald-200 bg-white/80'
                         }`}>
                           {slime ? (
                             <div 
@@ -1152,8 +1154,8 @@ export default function App() {
                         onClick={() => toggleBreedingSelection(slime.id)}
                         className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
                           isSelected 
-                          ? 'border-purple-500 bg-purple-200 shadow-md ring-2 ring-purple-300/60' 
-                          : 'border-gray-50 bg-white shadow-sm hover:border-purple-100'
+                          ? 'border-orange-400 bg-gradient-to-b from-orange-100 to-amber-50 shadow-md ring-2 ring-orange-300/50' 
+                          : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
                         }`}
                       >
                         <div 
@@ -1187,7 +1189,7 @@ export default function App() {
                         </div>
 
                         {isSelected && (
-                          <div className="absolute top-1 right-1 bg-purple-500 text-white w-3 h-3 rounded-full flex items-center justify-center text-[7px] font-black shadow-md border border-white">
+                          <div className="absolute top-1 right-1 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-gradient-to-br from-emerald-500 to-orange-500 text-[7px] font-black text-white shadow-md">
                             {breedingSelection.indexOf(slime.id) + 1}
                           </div>
                         )}
@@ -1197,24 +1199,24 @@ export default function App() {
                 </div>
                 
                 {state.slimes.length < 2 && (
-                  <div className="py-12 px-4 border-2 border-dashed border-purple-100 rounded-[1.5rem] bg-purple-50/30 flex flex-col items-center gap-3">
-                    <Ghost className="w-8 h-8 text-purple-200" />
-                    <p className="text-purple-400 text-[10px] font-bold uppercase tracking-wider text-center">Need more slimes!</p>
+                  <div className="flex flex-col items-center gap-3 rounded-[1.5rem] border-2 border-dashed border-orange-200/80 bg-gradient-to-b from-emerald-50/40 to-orange-50/40 px-4 py-12">
+                    <Ghost className="h-8 w-8 text-emerald-300" />
+                    <p className="text-center text-[10px] font-bold tracking-wider text-emerald-600 uppercase">Need more slimes!</p>
                   </div>
                 )}
               </div>
 
               {/* Breeds action — flex footer (no absolute overlay on the grid) */}
-              <div className="shrink-0 border-t border-purple-100 bg-white/95 px-4 py-3 backdrop-blur-md">
+              <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
                 <div className="mx-auto flex w-full max-w-sm justify-center">
                   <button
                     type="button"
                     onClick={breedSlimes}
                     disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                    className="flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-purple-500 px-6 py-3 text-white shadow-xl transition-all hover:bg-purple-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                    className="group flex w-full flex-col items-center justify-center gap-0.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-orange-500 px-6 py-3 text-white shadow-xl shadow-emerald-900/20 transition-all hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:from-zinc-400 disabled:via-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
                   >
-                    <span className="text-[11px] font-black uppercase tracking-widest">Breed Slimes</span>
-                    <span className="text-sm font-black tabular-nums text-purple-100">
+                    <span className="text-[11px] font-black uppercase tracking-widest group-disabled:text-zinc-100">Breed Slimes</span>
+                    <span className="text-sm font-black tabular-nums text-emerald-50 group-disabled:text-zinc-200">
                       {BREEDING_COST.toLocaleString()} 💰
                     </span>
                   </button>
@@ -1229,8 +1231,8 @@ export default function App() {
       <div
         className={
           isGameTab
-            ? 'pointer-events-none absolute bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-white/15 bg-white/45 p-2 pb-nav-safe backdrop-blur-md'
-            : 'relative z-50 flex justify-around items-center border-t bg-white p-2 pb-nav-safe'
+            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-around p-2 pb-nav-safe'
+            : 'glass-nav-page relative z-50 flex items-center justify-around p-2 pb-nav-safe'
         }
       >
         <NavButton 
@@ -1260,9 +1262,9 @@ function NavButton({ active, onClick, icon, hasNotification }: { active: boolean
     <button 
       type="button"
       onClick={onClick}
-      className={`pointer-events-auto flex flex-col items-center gap-1 p-2 rounded-2xl transition-all relative ${active ? 'text-green-600' : 'text-gray-400'}`}
+      className={`pointer-events-auto relative flex flex-col items-center gap-1 rounded-2xl p-2 transition-all ${active ? 'text-emerald-800' : 'text-gray-400'}`}
     >
-      <div className={`p-2 rounded-xl transition-all ${active ? 'bg-green-100' : ''}`}>
+      <div className={`rounded-xl p-2 transition-all ${active ? 'bg-gradient-to-br from-emerald-100 to-orange-100 shadow-sm ring-1 ring-orange-200/50' : ''}`}>
         {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
       </div>
       {hasNotification && (
@@ -1283,22 +1285,26 @@ interface UpgradeButtonProps {
 }
 
 function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: UpgradeButtonProps) {
+  const lockedOut = !canAfford || maxed;
   return (
     <button 
       onClick={onClick}
-      disabled={!canAfford || maxed}
-      className={`p-3 rounded-xl border flex flex-col gap-1 transition-all ${
-        maxed ? 'bg-gray-50 border-gray-200 opacity-50' :
-        canAfford ? 'bg-white border-green-100 hover:border-green-300' : 'bg-gray-50 border-gray-200 opacity-70'
+      disabled={lockedOut}
+      className={`flex flex-col gap-1 rounded-xl border p-3 transition-all ${
+        maxed
+          ? 'cursor-default border-zinc-200 bg-zinc-100'
+          : canAfford
+            ? 'border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 hover:border-orange-300'
+            : 'cursor-not-allowed border-zinc-200 bg-zinc-100'
       }`}
     >
-      <div className="flex justify-between items-center w-full">
-        <div className="text-green-600">{icon}</div>
-        <span className="text-[10px] font-black text-gray-400">LV.{level}</span>
+      <div className="flex w-full items-center justify-between">
+        <div className={canAfford && !maxed ? 'text-emerald-600' : 'text-zinc-500'}>{icon}</div>
+        <span className="text-[10px] font-black text-zinc-400">LV.{level}</span>
       </div>
       <div className="text-left">
-        <div className="text-xs font-bold text-gray-800">{name}</div>
-        <div className="text-[10px] font-bold text-green-600">
+        <div className={`text-xs font-bold ${maxed ? 'text-zinc-500' : canAfford ? 'text-zinc-800' : 'text-zinc-600'}`}>{name}</div>
+        <div className={`text-[10px] font-bold ${maxed ? 'text-orange-600' : canAfford ? 'text-orange-600' : 'text-zinc-600'}`}>
           {maxed ? 'MAX' : `${cost.toLocaleString()} 💰`}
         </div>
       </div>
@@ -1318,8 +1324,8 @@ const SlimeCard: React.FC<{
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       onClick={() => onClick(slime)}
-      className={`p-2 rounded-2xl shadow-sm border flex flex-col items-center transition-all cursor-pointer active:scale-95 ${
-        isEquipped ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-100'
+      className={`flex cursor-pointer flex-col items-center rounded-2xl border p-2 shadow-sm transition-all active:scale-95 ${
+        isEquipped ? 'border-orange-200 bg-gradient-to-b from-amber-50 to-orange-50 ring-1 ring-orange-200/60' : 'border-emerald-100/80 bg-white hover:border-orange-200/60'
       }`}
     >
       <div 
@@ -1357,10 +1363,10 @@ const SlimeCard: React.FC<{
           e.stopPropagation();
           onEquip(slime.id);
         }}
-        className={`w-full py-1.5 text-[8px] font-black uppercase rounded-lg transition-all ${
+        className={`w-full rounded-lg py-1.5 text-[8px] font-black uppercase transition-all ${
           isEquipped 
-          ? 'bg-yellow-500 text-white' 
-          : 'bg-green-50 text-green-600 hover:bg-green-100'
+          ? 'bg-gradient-to-r from-orange-400 to-amber-500 text-white shadow-sm' 
+          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
         }`}
       >
         {isEquipped ? 'Equipped' : 'Equip'}

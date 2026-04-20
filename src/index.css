@@ -52,4 +52,48 @@
   .game-upgrades-sheet {
     bottom: calc(env(safe-area-inset-bottom, 0px) + 5.75rem);
   }
+
+  /* App theme: mint garden + warm orange accent (complementary) */
+  .bg-app-game {
+    background: linear-gradient(
+      155deg,
+      #6ee7b7 0%,
+      #86efac 38%,
+      #a7f3d0 72%,
+      #fde68a 100%
+    );
+  }
+
+  .bg-app-splash {
+    background: linear-gradient(
+      165deg,
+      #34d399 0%,
+      #6ee7b7 40%,
+      #fcd34d 100%
+    );
+  }
+
+  .bg-app-page {
+    background: linear-gradient(180deg, #ecfdf5 0%, #fff7ed 42%, #fafaf9 100%);
+  }
+
+  .glass-header-game {
+    @apply border-b border-white/25 bg-gradient-to-r from-white/45 via-emerald-100/35 to-amber-100/40 backdrop-blur-md;
+  }
+
+  .glass-header-page {
+    @apply border-b border-emerald-100/70 bg-gradient-to-r from-white via-emerald-50/80 to-orange-50/50 backdrop-blur-md;
+  }
+
+  .glass-nav-game {
+    @apply border-t border-white/25 bg-gradient-to-r from-white/50 via-emerald-50/40 to-amber-100/35 backdrop-blur-md;
+  }
+
+  .glass-nav-page {
+    @apply border-t border-emerald-100/80 bg-gradient-to-r from-white to-orange-50/40 backdrop-blur-md;
+  }
+
+  .btn-primary-glow {
+    @apply bg-gradient-to-r from-emerald-500 to-teal-600 font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:shadow-emerald-500/35 active:scale-[0.98];
+  }
 }
