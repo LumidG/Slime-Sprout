@@ -61,8 +61,14 @@
     bottom: calc(max(2rem, env(safe-area-inset-bottom, 0px)) + 4.75rem + 0.5rem);
   }
 
+  /*
+   * Pin top + bottom so tall content doesn’t grow past the viewport (root is overflow-hidden).
+   * Inner panel scrolls — see App.tsx scroll wrapper on upgrade rows.
+   */
   .game-upgrades-sheet {
-    bottom: calc(max(2rem, env(safe-area-inset-bottom, 0px)) + 4.75rem + 0.5rem);
+    top: calc(max(0.75rem, env(safe-area-inset-top, 0px)) + 4rem);
+    /* Sit slightly lower (closer to nav) so the panel extends further down */
+    bottom: calc(max(1.25rem, env(safe-area-inset-bottom, 0px)) + 4rem);
   }
 
   /*

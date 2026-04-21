@@ -59,11 +59,10 @@ export function triggerPreviewHaptic(): void {
 export function useGlobalButtonTapFeedback(
   canPlay: boolean,
   sfxEnabled: boolean,
-  sfxVolume: number,
   hapticsEnabled: boolean
 ): void {
-  const optsRef = useRef({ canPlay, sfxEnabled, sfxVolume, hapticsEnabled });
-  optsRef.current = { canPlay, sfxEnabled, sfxVolume, hapticsEnabled };
+  const optsRef = useRef({ canPlay, sfxEnabled, hapticsEnabled });
+  optsRef.current = { canPlay, sfxEnabled, hapticsEnabled };
 
   useEffect(() => {
     const root = document.getElementById('root');
@@ -83,7 +82,7 @@ export function useGlobalButtonTapFeedback(
       playButtonTapSound({
         canPlay: o.canPlay,
         enabled: o.sfxEnabled,
-        volume: o.sfxVolume,
+        volume: o.sfxEnabled ? 1 : 0,
       });
       triggerTapHaptic(o.hapticsEnabled);
     };

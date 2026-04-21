@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'react';
 /** Served from `public/blossom.wav` (Vite root URL). */
 export const BLOSSOM_MUSIC_URL = '/blossom.wav';
 
+/** Served from `public/boss battle.wav` (space encoded for URL). */
+export const BOSS_BATTLE_MUSIC_URL = '/boss%20battle.wav';
+
 /**
  * Plays the main looped soundtrack via Web Audio API (`loop` on a decoded buffer)
  * for gapless repeats. Respects browser autoplay policy: pass `canPlay` only after
@@ -11,10 +14,11 @@ export const BLOSSOM_MUSIC_URL = '/blossom.wav';
 export function useBlossomMusic(
   canPlay: boolean,
   enabled: boolean,
-  volume: number
+  volume: number,
+  trackUrl: string = BLOSSOM_MUSIC_URL
 ): void {
   const ctxRef = useRef<AudioContext | null>(null);
-  const bufferRef = useRef<AudioBuffer | null>(null);
+  const bufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
   const volumeRef = useRef(volume);
@@ -54,13 +58,15 @@ export function useBlossomMusic(
         const ctx = ctxRef.current;
         await ctx.resume();
 
-        if (!bufferRef.current) {
-          const res = await fetch(BLOSSOM_MUSIC_URL);
+        let buffer = bufferCacheRef.current.get(trackUrl);
+        if (!buffer) {
+          const res = await fetch(trackUrl);
           if (!res.ok) {
-            throw new Error(`Failed to load ${BLOSSOM_MUSIC_URL} (${res.status})`);
+            throw new Error(`Failed to load ${trackUrl} (${res.status})`);
           }
           const raw = await res.arrayBuffer();
-          bufferRef.current = await ctx.decodeAudioData(raw.slice(0));
+          buffer = await ctx.decodeAudioData(raw.slice(0));
+          bufferCacheRef.current.set(trackUrl, buffer);
         }
 
         if (cancelled) return;
@@ -79,7 +85,7 @@ export function useBlossomMusic(
         gainRef.current = gain;
 
         const source = ctx.createBufferSource();
-        source.buffer = bufferRef.current;
+        source.buffer = buffer;
         source.loop = true;
         source.connect(gain);
         gain.connect(ctx.destination);
@@ -103,5 +109,5 @@ export function useBlossomMusic(
       }
       gainRef.current = null;
     };
-  }, [canPlay, enabled]);
+  }, [canPlay, enabled, trackUrl]);
 }

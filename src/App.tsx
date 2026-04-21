@@ -26,14 +26,14 @@ import {
   MessageCircle,
   MoreVertical,
   Volume2,
-  VolumeX,
   Star,
   Mail,
   X,
   Music,
   ArrowUp,
   Swords,
-  Smartphone,
+  Vibrate,
+  Lock,
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeMarketAuction, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
@@ -46,6 +46,7 @@ import {
   EGG_COST,
   BREEDING_COST,
   SLIME_UPGRADE_COST,
+  SLIME_STAT_UPGRADE_DELTA,
   computeOfflineIdleGain,
   OFFLINE_IDLE_CAP_MS,
   SLIME_NAMES,
@@ -61,34 +62,68 @@ import {
   MAX_GAME_UPGRADE_LEVEL,
   areAllGameUpgradesMaxed,
   isGameUpgradeMaxed,
-  getSlimeMarketTrend,
+  onScreenCoinCap,
+  BASE_MOVEMENT_SPEED,
+  gamePlayerBaseSpeedAtLevel,
+  gameRespawnIntervalMs,
+  gameCoinValuePerCollect,
   processSlimeMarketTick,
+  getPlayerSellNowPrice,
+  getPlayerAuctionOpeningMinBid,
   getNextMarketBid,
   getInstantNpcBuyPrice,
   SLIME_MARKET_MIN_BID_STEP,
   SLIME_MARKET_AUCTION_MS,
-  ARENA_COOLDOWN_MS,
   ARENA_ABILITY_META,
-  isSlimeOnCooldown,
   isArenaAbilityOnCooldown,
   rollRandomArenaAbility,
   type ArenaEncounter,
 } from './constants';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
-import { useBlossomMusic } from './hooks/useBlossomMusic';
+import { useAppForeground } from './hooks/useAppForeground';
+import { useBlossomMusic, BLOSSOM_MUSIC_URL, BOSS_BATTLE_MUSIC_URL } from './hooks/useBlossomMusic';
 import { useCoinCollectSfx } from './hooks/useCoinCollectSfx';
 import { useGlobalButtonTapFeedback, triggerPreviewHaptic } from './hooks/useTapFeedback';
 
-function formatAwayDuration(ms: number): string {
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60) return 'a short while';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} minute${min === 1 ? '' : 's'}`;
-  const h = Math.floor(min / 60);
-  const rm = min % 60;
-  if (rm === 0) return `${h} hour${h === 1 ? '' : 's'}`;
-  return `${h}h ${rm}m`;
+function OptionsOnOffRow(props: {
+  icon: React.ReactNode;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  switchId: string;
+  className?: string;
+}) {
+  const { icon, label, checked, onToggle, switchId, className } = props;
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 rounded-xl border border-emerald-100/80 bg-emerald-50/60 px-3 py-2.5 ${className ?? ''}`}
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm" aria-hidden>
+          {icon}
+        </div>
+        <span className="text-sm font-bold text-emerald-900">{label}</span>
+      </div>
+      <button
+        type="button"
+        id={switchId}
+        role="switch"
+        aria-checked={checked}
+        aria-label={`${label}: ${checked ? 'on' : 'off'}`}
+        onClick={onToggle}
+        className={`relative h-7 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
+          checked ? 'bg-emerald-500' : 'bg-gray-300'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-4' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </div>
+  );
 }
 
 export default function App() {
@@ -97,6 +132,8 @@ export default function App() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [hasStarted, setHasStarted] = useState(false);
   const [isUpgradesOpen, setIsUpgradesOpen] = useState(false);
+  const upgradesScrollRef = useRef<HTMLDivElement>(null);
+  const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [selectedSlimeDetail, setSelectedSlimeDetail] = useState<Slime | null>(null);
   const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
@@ -105,12 +142,19 @@ export default function App() {
   /** Short GPU translate when changing world; avoids remounting GameWorld (was causing heavy lag). */
   const [worldNavShiftPx, setWorldNavShiftPx] = useState(0);
   const [worldNavTransition, setWorldNavTransition] = useState(true);
+  /** True while an arena fight is running (team picked battle, canvas phase). Drives boss battle music. */
+  const [arenaBattleActive, setArenaBattleActive] = useState(false);
   const gameUpgradeMaxedUnlockRef = useRef(false);
   /** Shown after load or resume when automation earned coins while away. */
   const [offlineWelcome, setOfflineWelcome] = useState<{
     currencyEarned: number;
     awayMs: number;
     idleCoins: number;
+  } | null>(null);
+  /** Shown when maxing all game-tab upgrades unlocks the next playfield (not persisted). */
+  const [worldUnlockCelebration, setWorldUnlockCelebration] = useState<{
+    worldIndex: number;
+    worldName: string;
   } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -123,13 +167,21 @@ export default function App() {
   }, []);
   const nowMs = Date.now();
 
+  const appForeground = useAppForeground();
+
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
     "Upgrade your slimes or breed them to create powerful hybrids!",
     "Let's start collecting. Have fun!"
   ];
 
-  useBlossomMusic(hasStarted, state.settings.musicEnabled, state.settings.musicVolume);
+  const musicTrackUrl =
+    state.activeTab === 'arena' && arenaBattleActive ? BOSS_BATTLE_MUSIC_URL : BLOSSOM_MUSIC_URL;
+  useBlossomMusic(hasStarted, state.settings.musicEnabled && appForeground, 1, musicTrackUrl);
+
+  useEffect(() => {
+    if (state.activeTab !== 'arena') setArenaBattleActive(false);
+  }, [state.activeTab]);
 
   // Fake loading hides when progress hits 100%, but we must clear this flag so world-unlock logic and saves run.
   useEffect(() => {
@@ -137,6 +189,45 @@ export default function App() {
       setIsLoading(false);
     }
   }, [loadingProgress]);
+
+  /** Bottom fade on upgrades list when content scrolls (hint that more is below). */
+  useEffect(() => {
+    if (!isUpgradesOpen) {
+      setUpgradesScrollFadeBottom(false);
+      return;
+    }
+    const updateFade = () => {
+      const el = upgradesScrollRef.current;
+      if (!el) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const canScroll = scrollHeight > clientHeight + 2;
+      const atBottom = scrollHeight - scrollTop - clientHeight <= 14;
+      setUpgradesScrollFadeBottom(canScroll && !atBottom);
+    };
+    let raf = 0;
+    const ro = new ResizeObserver(updateFade);
+    const bind = () => {
+      const el = upgradesScrollRef.current;
+      if (!el) {
+        raf = requestAnimationFrame(bind);
+        return;
+      }
+      updateFade();
+      el.addEventListener('scroll', updateFade, { passive: true });
+      ro.observe(el);
+      window.addEventListener('resize', updateFade);
+    };
+    bind();
+    return () => {
+      cancelAnimationFrame(raf);
+      const el = upgradesScrollRef.current;
+      if (el) {
+        el.removeEventListener('scroll', updateFade);
+        ro.disconnect();
+      }
+      window.removeEventListener('resize', updateFade);
+    };
+  }, [isUpgradesOpen]);
 
   const completeOnboarding = () => {
     setState(prev => ({ ...prev, hasCompletedOnboarding: true }));
@@ -162,18 +253,25 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
       state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue));
   
-  const canAffordBreeding = state.slimes.length >= 2 && state.coins >= BREEDING_COST;
-  const canAffordNpcMarketBid = state.slimeMarketAuctions.some((a) => {
-    if (a.seller !== 'npc' || a.endsAt <= Date.now()) return false;
-    const spendable = state.coins + (a.highBidder === 'player' ? a.playerBidAmount : 0);
-    return spendable >= getInstantNpcBuyPrice(a) || spendable >= getNextMarketBid(a);
+  const now = Date.now();
+  const hasSlimeMarketTabNotification = state.slimeMarketAuctions.some((a) => {
+    if (a.endsAt <= now) return false;
+    if (a.seller === 'npc' && a.highBidder === 'player') return true;
+    if (a.seller === 'player' && a.highBidder === 'npc' && a.currentBid > 0) return true;
+    return false;
   });
-
-  const hasBreedingNotification = canAffordBreeding;
-  const hasSlimeMarketTabNotification = canAffordNpcMarketBid;
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
   const isGameTab = state.activeTab === 'game';
+
+  const openSlimeDetail = useCallback((slime: Slime) => {
+    setState((prev) =>
+      prev.slimeDetailSeenIds.includes(slime.id)
+        ? prev
+        : { ...prev, slimeDetailSeenIds: [...prev.slimeDetailSeenIds, slime.id] }
+    );
+    setSelectedSlimeDetail(slime);
+  }, []);
 
   // Android: keep status + navigation bars hidden on every tab; re-apply on tab change in case the OS restores them.
   useLayoutEffect(() => {
@@ -239,26 +337,17 @@ export default function App() {
       }
 
       const s = parsed.settings;
-      const clampVol = (v: unknown) => {
-        const n = Number(v);
-        return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
-      };
       if (s && 'soundVolume' in s && !('musicVolume' in s)) {
-        const legacyVol = clampVol(s.soundVolume);
         const legacyOn = Boolean((s as { soundEnabled?: boolean }).soundEnabled ?? true);
         parsed.settings = {
           musicEnabled: legacyOn,
-          musicVolume: legacyVol,
           sfxEnabled: legacyOn,
-          sfxVolume: legacyVol,
           hapticsEnabled: Boolean(s?.hapticsEnabled ?? false),
         };
       } else {
         parsed.settings = {
           musicEnabled: Boolean(s?.musicEnabled ?? true),
-          musicVolume: clampVol(s?.musicVolume),
           sfxEnabled: Boolean(s?.sfxEnabled ?? true),
-          sfxVolume: clampVol(s?.sfxVolume),
           hapticsEnabled: Boolean(s?.hapticsEnabled ?? false),
         };
       }
@@ -270,11 +359,19 @@ export default function App() {
       if (!validTabs.has(parsed.activeTab)) {
         parsed.activeTab = 'game';
       }
-      if (!parsed.slimeCooldownUntil || typeof parsed.slimeCooldownUntil !== 'object') {
-        parsed.slimeCooldownUntil = {};
-      }
+      delete parsed.slimeCooldownUntil;
       if (!parsed.slimeArenaAbilityCooldownUntil || typeof parsed.slimeArenaAbilityCooldownUntil !== 'object') {
         parsed.slimeArenaAbilityCooldownUntil = {};
+      }
+      if (typeof parsed.arenaWins !== 'number' || !Number.isFinite(parsed.arenaWins) || parsed.arenaWins < 0) {
+        parsed.arenaWins = 0;
+      } else {
+        parsed.arenaWins = Math.floor(parsed.arenaWins);
+      }
+      if (!Array.isArray(parsed.slimeDetailSeenIds)) {
+        parsed.slimeDetailSeenIds = Array.isArray(parsed.slimes)
+          ? parsed.slimes.map((s: Slime) => s.id)
+          : [];
       }
       if (Array.isArray(parsed.slimes)) {
         parsed.slimes = parsed.slimes.map((s: Slime) => ({
@@ -286,7 +383,10 @@ export default function App() {
         parsed.activeTab = 'slimeMarket';
       }
       delete parsed.marketSection;
-      
+
+      // Cold start: always open the main coin playfield after load (not the last tab from the previous session).
+      parsed.activeTab = 'game';
+
       setState({ ...parsed, lastSavedTime: now });
     }
 
@@ -347,6 +447,12 @@ export default function App() {
     if (gameUpgradeMaxedUnlockRef.current) return;
     gameUpgradeMaxedUnlockRef.current = true;
 
+    const nextWorldIndex = state.maxUnlockedGameWorld + 1;
+    setWorldUnlockCelebration({
+      worldIndex: nextWorldIndex,
+      worldName: GAME_WORLDS[nextWorldIndex].name,
+    });
+
     setState((prev) => {
       if (!areAllGameUpgradesMaxed(prev.upgrades)) return prev;
       if (prev.maxUnlockedGameWorld >= 5) return prev;
@@ -387,12 +493,11 @@ export default function App() {
 
   const addCoins = useCallback((count: number) => {
     setState(prev => {
-      const upgradeValue = prev.upgrades.coinValue;
-      
+      const upgradeValue = gameCoinValuePerCollect(prev.upgrades.coinValue);
+
       // Calculate trait bonus
       let traitBonus = 0;
       prev.equippedSlimeIds.forEach(id => {
-        if (isSlimeOnCooldown(prev.slimeCooldownUntil, id)) return;
         const slime = prev.slimes.find(s => s.id === id);
         if (slime && slime.trait) {
           traitBonus += TRAIT_EFFECTS[slime.trait].coinValue || 0;
@@ -409,15 +514,14 @@ export default function App() {
   }, []);
 
   const playCoinCollect = useCoinCollectSfx(
-    hasStarted,
+    hasStarted && appForeground,
     state.settings.sfxEnabled,
-    state.settings.sfxVolume
+    1
   );
 
   useGlobalButtonTapFeedback(
-    hasStarted,
+    hasStarted && appForeground,
     state.settings.sfxEnabled,
-    state.settings.sfxVolume,
     state.settings.hapticsEnabled
   );
 
@@ -425,6 +529,11 @@ export default function App() {
     if (!offlineWelcome || !hasStarted) return;
     playCoinCollect(Math.min(5, Math.max(1, Math.ceil(offlineWelcome.idleCoins / 20))));
   }, [offlineWelcome, hasStarted, playCoinCollect]);
+
+  useEffect(() => {
+    if (!worldUnlockCelebration || !hasStarted) return;
+    playCoinCollect(6);
+  }, [worldUnlockCelebration, hasStarted, playCoinCollect]);
 
   const handleGameCollect = useCallback(
     (count: number) => {
@@ -571,7 +680,7 @@ export default function App() {
           value: Math.floor(s.value * 1.2),
           stats: {
             ...s.stats,
-            [stat]: s.stats[stat] + (stat === 'health' ? 5 : 2),
+            [stat]: s.stats[stat] + SLIME_STAT_UPGRADE_DELTA[stat],
           },
           statLevels: {
             ...s.statLevels,
@@ -600,7 +709,8 @@ export default function App() {
     setState(prev => ({
       ...prev,
       coins: prev.coins + slime.value,
-      slimes: prev.slimes.filter(s => s.id !== id)
+      slimes: prev.slimes.filter(s => s.id !== id),
+      slimeDetailSeenIds: prev.slimeDetailSeenIds.filter((x) => x !== id),
     }));
   };
 
@@ -639,12 +749,30 @@ export default function App() {
     setState(s => ({ ...s, activeSubTab: 'collect' }));
   };
 
+  const sellSlimeNow = (slimeId: string) => {
+    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
+    setState((prev) => {
+      const slime = prev.slimes.find((s) => s.id === slimeId);
+      if (!slime) return prev;
+      const price = getPlayerSellNowPrice(slime);
+      return {
+        ...prev,
+        coins: prev.coins + price,
+        totalCoinsCollected: prev.totalCoinsCollected + price,
+        slimes: prev.slimes.filter((s) => s.id !== slimeId),
+        equippedSlimeIds: prev.equippedSlimeIds.filter((id) => id !== slimeId),
+        slimeDetailSeenIds: prev.slimeDetailSeenIds.filter((x) => x !== slimeId),
+      };
+    });
+  };
+
   const listSlimeForAuction = (slimeId: string) => {
     setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
     setState((prev) => {
       const slime = prev.slimes.find((s) => s.id === slimeId);
       if (!slime) return prev;
-      const minBid = Math.max(50, Math.floor(slime.value * 0.75));
+      const playerSellNowSnapshot = getPlayerSellNowPrice(slime);
+      const minBid = getPlayerAuctionOpeningMinBid(slime, playerSellNowSnapshot);
       const auction: SlimeMarketAuction = {
         id: `pl-${Math.random().toString(36).slice(2, 11)}`,
         slime: { ...slime },
@@ -654,11 +782,13 @@ export default function App() {
         minBid,
         highBidder: null,
         playerBidAmount: 0,
+        playerSellNowSnapshot,
       };
       return {
         ...prev,
         slimes: prev.slimes.filter((s) => s.id !== slimeId),
         equippedSlimeIds: prev.equippedSlimeIds.filter((id) => id !== slimeId),
+        slimeDetailSeenIds: prev.slimeDetailSeenIds.filter((x) => x !== slimeId),
         slimeMarketAuctions: [...prev.slimeMarketAuctions, auction],
       };
     });
@@ -668,10 +798,10 @@ export default function App() {
     setState((prev) => {
       const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
       if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
+      if (a.highBidder === 'player') return prev;
       const next = getNextMarketBid(a);
       if (prev.coins < next) return prev;
       let coins = prev.coins;
-      if (a.highBidder === 'player') coins += a.playerBidAmount;
       coins -= next;
       let currentBid = next;
       let highBidder: 'player' | 'npc' = 'player';
@@ -690,7 +820,9 @@ export default function App() {
         }
       }
       const slimeMarketAuctions = prev.slimeMarketAuctions.map((x) =>
-        x.id === auctionId ? { ...a, currentBid, highBidder, playerBidAmount } : x
+        x.id === auctionId
+          ? { ...a, currentBid, highBidder, playerBidAmount, npcInstantBuyLocked: true }
+          : x
       );
       return { ...prev, coins, slimeMarketAuctions };
     });
@@ -700,9 +832,10 @@ export default function App() {
     setState((prev) => {
       const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
       if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
+      if (a.npcInstantBuyLocked) return prev;
       const instant = getInstantNpcBuyPrice(a);
       const next = getNextMarketBid(a);
-      if (instant >= next) return prev;
+      if (instant <= next) return prev;
       let coins = prev.coins;
       if (a.highBidder === 'player') coins += a.playerBidAmount;
       if (coins < instant) return prev;
@@ -729,25 +862,17 @@ export default function App() {
     (payload: {
       won: boolean;
       encounter: ArenaEncounter;
-      starterIds: [string, string, string];
-      reserveIds: [string | undefined, string | undefined];
+      teamIds: [string, string, string, string];
       arenaAbilityUserIds: string[];
     }) => {
-      const { won, encounter, starterIds, reserveIds, arenaAbilityUserIds } = payload;
-      const participantIds = [...starterIds, ...reserveIds.filter((x): x is string => x != null)];
+      const { won, encounter, arenaAbilityUserIds } = payload;
       setState((prev) => {
         let coins = prev.coins;
-        let slimeCooldownUntil = prev.slimeCooldownUntil;
         let slimeArenaAbilityCooldownUntil = prev.slimeArenaAbilityCooldownUntil;
         if (won) {
           coins += encounter.rewardCoins;
-        } else {
-          const until = Date.now() + ARENA_COOLDOWN_MS;
-          slimeCooldownUntil = { ...prev.slimeCooldownUntil };
-          for (const id of participantIds) {
-            slimeCooldownUntil[id] = until;
-          }
         }
+        const arenaWins = won ? (prev.arenaWins ?? 0) + 1 : (prev.arenaWins ?? 0);
         if (arenaAbilityUserIds.length > 0) {
           const t = Date.now();
           slimeArenaAbilityCooldownUntil = { ...prev.slimeArenaAbilityCooldownUntil };
@@ -760,7 +885,7 @@ export default function App() {
             }
           }
         }
-        return { ...prev, coins, slimeCooldownUntil, slimeArenaAbilityCooldownUntil };
+        return { ...prev, coins, slimeArenaAbilityCooldownUntil, arenaWins };
       });
     },
     []
@@ -799,11 +924,18 @@ export default function App() {
   const debugCompleteLevel = () => {
     setState((prev) => {
       if (prev.maxUnlockedGameWorld >= 5) return prev;
+      const nextIndex = prev.maxUnlockedGameWorld + 1;
       gameUpgradeMaxedUnlockRef.current = false;
+      queueMicrotask(() =>
+        setWorldUnlockCelebration({
+          worldIndex: nextIndex,
+          worldName: GAME_WORLDS[nextIndex].name,
+        })
+      );
       return {
         ...prev,
-        maxUnlockedGameWorld: prev.maxUnlockedGameWorld + 1,
-        gameWorldIndex: prev.maxUnlockedGameWorld + 1,
+        maxUnlockedGameWorld: nextIndex,
+        gameWorldIndex: nextIndex,
         upgrades: { ...INITIAL_STATE.upgrades },
       };
     });
@@ -1044,127 +1176,51 @@ export default function App() {
                 </button>
               </div>
 
-              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">Music</p>
-              <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setState((s) => ({
+              <OptionsOnOffRow
+                className="mb-3"
+                icon={<Music className="h-4 w-4" />}
+                label="Music"
+                switchId="opt-music"
+                checked={state.settings.musicEnabled}
+                onToggle={() =>
+                  setState((s) => ({
+                    ...s,
+                    settings: { ...s.settings, musicEnabled: !s.settings.musicEnabled },
+                  }))
+                }
+              />
+              <OptionsOnOffRow
+                className="mb-3"
+                icon={<Volume2 className="h-4 w-4" />}
+                label="Sound effects"
+                switchId="opt-sfx"
+                checked={state.settings.sfxEnabled}
+                onToggle={() =>
+                  setState((s) => ({
+                    ...s,
+                    settings: { ...s.settings, sfxEnabled: !s.settings.sfxEnabled },
+                  }))
+                }
+              />
+              <OptionsOnOffRow
+                className="mb-4"
+                icon={<Vibrate className="h-4 w-4" />}
+                label="Vibration"
+                switchId="opt-haptics"
+                checked={state.settings.hapticsEnabled}
+                onToggle={() =>
+                  setState((s) => {
+                    const next = !s.settings.hapticsEnabled;
+                    if (next) {
+                      triggerPreviewHaptic();
+                    }
+                    return {
                       ...s,
-                      settings: { ...s.settings, musicEnabled: !s.settings.musicEnabled },
-                    }))
-                  }
-                  className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm"
-                  aria-label={state.settings.musicEnabled ? 'Mute music' : 'Unmute music'}
-                >
-                  {state.settings.musicEnabled ? (
-                    <Music className="h-4 w-4" />
-                  ) : (
-                    <VolumeX className="h-4 w-4" />
-                  )}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <label className="sr-only" htmlFor="music-volume">
-                    Music volume
-                  </label>
-                  <input
-                    id="music-volume"
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round(state.settings.musicVolume * 100)}
-                    onChange={(e) => {
-                      const v = Number(e.target.value) / 100;
-                      setState((s) => ({
-                        ...s,
-                        settings: { ...s.settings, musicVolume: v },
-                      }));
-                    }}
-                    className="h-2 w-full cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!state.settings.musicEnabled}
-                  />
-                </div>
-              </div>
-
-              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">
-                Sound effects
-              </p>
-              <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      settings: { ...s.settings, sfxEnabled: !s.settings.sfxEnabled },
-                    }))
-                  }
-                  className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm"
-                  aria-label={state.settings.sfxEnabled ? 'Mute sound effects' : 'Unmute sound effects'}
-                >
-                  {state.settings.sfxEnabled ? (
-                    <Volume2 className="h-4 w-4" />
-                  ) : (
-                    <VolumeX className="h-4 w-4" />
-                  )}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <label className="sr-only" htmlFor="sfx-volume">
-                    Sound effects volume
-                  </label>
-                  <input
-                    id="sfx-volume"
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round(state.settings.sfxVolume * 100)}
-                    onChange={(e) => {
-                      const v = Number(e.target.value) / 100;
-                      setState((s) => ({
-                        ...s,
-                        settings: { ...s.settings, sfxVolume: v },
-                      }));
-                    }}
-                    className="h-2 w-full cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!state.settings.sfxEnabled}
-                  />
-                </div>
-              </div>
-
-              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-600/80">
-                Phone vibration
-              </p>
-              <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-100/80 bg-emerald-50/60 p-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setState((s) => {
-                      const next = !s.settings.hapticsEnabled;
-                      if (next) {
-                        triggerPreviewHaptic();
-                      }
-                      return {
-                        ...s,
-                        settings: { ...s.settings, hapticsEnabled: next },
-                      };
-                    })
-                  }
-                  className={`flex shrink-0 items-center justify-center rounded-lg p-2 shadow-sm ${
-                    state.settings.hapticsEnabled
-                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
-                      : 'bg-white/80 text-emerald-800'
-                  }`}
-                  aria-label={
-                    state.settings.hapticsEnabled
-                      ? 'Disable phone vibration on button taps'
-                      : 'Enable phone vibration on button taps'
-                  }
-                >
-                  <Smartphone className="h-4 w-4" />
-                </button>
-                <p className="min-w-0 flex-1 text-xs font-medium leading-snug text-emerald-900/90">
-                  Very light vibration when you tap buttons (native app only).
-                </p>
-              </div>
+                      settings: { ...s.settings, hapticsEnabled: next },
+                    };
+                  })
+                }
+              />
 
               <div className="flex flex-col gap-1.5">
                 <button
@@ -1173,9 +1229,14 @@ export default function App() {
                     setIsOptionsOpen(false);
                     window.open(PLAY_STORE_LISTING_URL, '_blank', 'noopener,noreferrer');
                   }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
                 >
-                  <Star className="h-4 w-4 shrink-0 text-amber-500" />
+                  <Star
+                    className="h-5 w-5 shrink-0 fill-amber-400 text-amber-500"
+                    fill="currentColor"
+                    strokeWidth={0}
+                    aria-hidden
+                  />
                   Rate the game
                 </button>
                 <button
@@ -1184,9 +1245,13 @@ export default function App() {
                     setIsOptionsOpen(false);
                     window.location.href = SUPPORT_MAILTO;
                   }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
                 >
-                  <Mail className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <Mail
+                    className="h-5 w-5 shrink-0 text-emerald-700"
+                    strokeWidth={2.25}
+                    aria-hidden
+                  />
                   Contact support
                 </button>
               </div>
@@ -1224,13 +1289,9 @@ export default function App() {
               >
                 <Sparkles className="h-14 w-14 text-amber-500 drop-shadow-md" />
               </motion.div>
-              <h2 className="mb-1 text-2xl font-black text-emerald-950 drop-shadow-sm">
+              <h2 className="mb-5 text-2xl font-black text-emerald-950 drop-shadow-sm">
                 Welcome back!
               </h2>
-              <p className="mb-5 text-sm font-semibold text-emerald-800/85">
-                Your automation kept working while you were away (
-                {formatAwayDuration(offlineWelcome.awayMs)}).
-              </p>
               <div className="mb-6 flex flex-col items-center gap-2 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50 py-5 shadow-inner">
                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-800/90">
                   <Timer className="h-3.5 w-3.5" aria-hidden />
@@ -1255,6 +1316,61 @@ export default function App() {
                 className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 py-4 text-lg font-black text-white shadow-lg shadow-emerald-900/25 ring-2 ring-white/30 transition-transform hover:scale-[1.02] active:scale-[0.98]"
               >
                 Collect
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Max upgrades: next playfield unlocked */}
+      <AnimatePresence>
+        {worldUnlockCelebration && hasStarted && (
+          <motion.div
+            key="world-unlock"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[206] flex items-center justify-center bg-gradient-to-br from-violet-600/95 via-fuchsia-500/90 to-emerald-600/95 p-6 text-center backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.88, y: 28 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/40 bg-gradient-to-b from-white to-fuchsia-50/60 p-6 pt-8 shadow-2xl shadow-emerald-900/30 ring-2 ring-fuchsia-200/70"
+            >
+              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-violet-500 via-fuchsia-400 to-emerald-500" />
+              <motion.div
+                animate={{ rotate: [0, -6, 6, 0], scale: [1, 1.06, 1] }}
+                transition={{ repeat: Infinity, duration: 2.4 }}
+                className="mb-3 flex justify-center gap-2"
+              >
+                <PartyPopper className="h-11 w-11 text-fuchsia-500 drop-shadow-md" aria-hidden />
+                <Trophy className="h-12 w-12 text-amber-500 drop-shadow-md" aria-hidden />
+              </motion.div>
+              <p className="mb-1 text-[10px] font-black uppercase tracking-[0.35em] text-fuchsia-700/90">
+                Level complete
+              </p>
+              <h2 className="mb-2 text-2xl font-black text-emerald-950 drop-shadow-sm">
+                New area unlocked!
+              </h2>
+              <p className="mb-2 text-[11px] font-bold tabular-nums text-emerald-600/95">
+                Stage {worldUnlockCelebration.worldIndex + 1} of {GAME_WORLDS.length}
+              </p>
+              <p className="mb-1 text-sm font-bold text-emerald-800/90">
+                Welcome to{' '}
+                <span className="text-fuchsia-800">{worldUnlockCelebration.worldName}</span>
+              </p>
+              <p className="mb-6 text-xs font-semibold leading-snug text-emerald-700/85">
+                Shop upgrades were reset for this tier—keep collecting and power up again as you
+                explore the next stage of your journey.
+              </p>
+              <button
+                type="button"
+                onClick={() => setWorldUnlockCelebration(null)}
+                className="w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-600 py-4 text-lg font-black text-white shadow-lg shadow-emerald-900/25 ring-2 ring-white/35 transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Enter new level
               </button>
             </motion.div>
           </motion.div>
@@ -1473,19 +1589,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {isSlimeOnCooldown(state.slimeCooldownUntil, selectedSlimeDetail.id, nowMs) && (
-                  <div className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-left shadow-sm">
-                    <Timer className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
-                    <p className="text-[10px] font-bold leading-snug text-amber-950/90">
-                      Arena cooldown: coin bonuses and field bursts are paused for this slime (
-                      {formatSlimeCooldownShort(
-                        Math.max(0, (state.slimeCooldownUntil[selectedSlimeDetail.id] ?? 0) - nowMs)
-                      )}{' '}
-                      left). Unequip and use another slime if you need full bonuses.
-                    </p>
-                  </div>
-                )}
-
                 <div className="mb-4 w-full space-y-4 rounded-[2rem] border border-emerald-100/60 bg-gradient-to-b from-emerald-50/80 to-orange-50/30 p-4">
                   <div className="text-center mb-1">
                     <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Coin field trait</p>
@@ -1533,12 +1636,18 @@ export default function App() {
                             <div className="shrink-0 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
                             <div className="min-w-0">
                               <div className="text-[9px] font-black uppercase leading-none text-red-400 group-disabled:text-zinc-500">HP UP</div>
-                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</div>
+                              <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
+                                <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</span>
+                                <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
+                                <span className="text-lg text-emerald-600 group-disabled:text-emerald-600/70">
+                                  {selectedSlimeDetail.stats.health + SLIME_STAT_UPGRADE_DELTA.health}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
-                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
+                          <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
                           </div>
                         </button>
                         <button 
@@ -1551,12 +1660,18 @@ export default function App() {
                             <div className="shrink-0 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
                             <div className="min-w-0">
                               <div className="text-[9px] font-black uppercase leading-none text-orange-400 group-disabled:text-zinc-500">STR UP</div>
-                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</div>
+                              <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
+                                <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</span>
+                                <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
+                                <span className="text-lg text-emerald-600 group-disabled:text-emerald-600/70">
+                                  {selectedSlimeDetail.stats.strength + SLIME_STAT_UPGRADE_DELTA.strength}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
-                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
+                          <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
                           </div>
                         </button>
                         <button 
@@ -1569,12 +1684,18 @@ export default function App() {
                             <div className="shrink-0 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
                             <div className="min-w-0">
                               <div className="text-[9px] font-black uppercase leading-none text-blue-400 group-disabled:text-zinc-500">AGI UP</div>
-                              <div className="mt-0.5 text-lg font-black leading-none text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</div>
+                              <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
+                                <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</span>
+                                <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
+                                <span className="text-lg text-emerald-600 group-disabled:text-emerald-600/70">
+                                  {selectedSlimeDetail.stats.agility + SLIME_STAT_UPGRADE_DELTA.agility}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                          <div className="shrink-0 rounded-xl border border-amber-200/80 bg-gradient-to-b from-amber-50 to-orange-50 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-200 group-disabled:bg-zinc-100">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-amber-800/80 group-disabled:text-zinc-500">Upgrade</div>
-                            <div className="text-xs font-black text-amber-950 group-disabled:text-zinc-600">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
+                          <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
+                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
                           </div>
                         </button>
                       </div>
@@ -1628,13 +1749,15 @@ export default function App() {
                     automationLevel={state.upgrades.automation}
                     movementSpeedLevel={state.upgrades.movementSpeed}
                     respawnTimeLevel={state.upgrades.respawnTime}
-                    equippedSlimes={state.slimes.filter(
-                      (s) =>
-                        state.equippedSlimeIds.includes(s.id) &&
-                        !isSlimeOnCooldown(state.slimeCooldownUntil, s.id)
+                    equippedSlimes={state.slimes.filter((s) =>
+                      state.equippedSlimeIds.includes(s.id)
                     )}
                     insetLeftForWorldNav={state.gameWorldIndex > 0}
-                    insetRightForWorldNav={state.maxUnlockedGameWorld > state.gameWorldIndex}
+                    insetRightForWorldNav={
+                      state.maxUnlockedGameWorld > state.gameWorldIndex ||
+                      (state.gameWorldIndex === state.maxUnlockedGameWorld &&
+                        state.maxUnlockedGameWorld < GAME_WORLDS.length - 1)
+                    }
                   />
                 </div>
 
@@ -1667,6 +1790,26 @@ export default function App() {
                     <ChevronRight className="h-7 w-7 text-white" strokeWidth={2.25} />
                   </button>
                 )}
+
+                {state.gameWorldIndex === state.maxUnlockedGameWorld &&
+                  state.maxUnlockedGameWorld < GAME_WORLDS.length - 1 && (
+                    <div
+                      className="pointer-events-none absolute right-2 top-1/2 z-[38] -translate-y-1/2"
+                      role="img"
+                      aria-label="Next area locked. Max all game upgrades in this world to unlock."
+                    >
+                      <div className="relative rounded-full border-2 border-gray-400/50 bg-gray-500/15 p-2 shadow-inner ring-1 ring-gray-400/30 backdrop-blur-sm">
+                        <ChevronRight
+                          className="h-7 w-7 text-gray-400/90"
+                          strokeWidth={2.25}
+                          aria-hidden
+                        />
+                        <div className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/40 bg-gray-600 shadow-sm">
+                          <Lock className="h-2.5 w-2.5 text-gray-100" strokeWidth={2.5} aria-hidden />
+                        </div>
+                      </div>
+                    </div>
+                  )}
               </div>
             </motion.div>
           )}
@@ -1847,9 +1990,8 @@ export default function App() {
                       coins={state.coins}
                       isEquipped={state.equippedSlimeIds.includes(slime.id)}
                       onEquip={toggleEquipSlime}
-                      onClick={setSelectedSlimeDetail}
-                      cooldownUntil={state.slimeCooldownUntil[slime.id]}
-                      now={nowMs}
+                      onClick={openSlimeDetail}
+                      detailSeen={state.slimeDetailSeenIds.includes(slime.id)}
                     />
                   ))}
                   {state.slimes.length === 0 && (
@@ -1916,6 +2058,15 @@ export default function App() {
                         );
                       })}
                     </div>
+                    {breedingSelection.length < 2 && (
+                      <motion.p
+                        animate={{ opacity: [0.45, 1, 0.45] }}
+                        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+                        className="text-[10px] font-bold uppercase tracking-wider text-emerald-600/90"
+                      >
+                        select parents
+                      </motion.p>
+                    )}
                   </div>
 
                   {/* Scrollable Selection List */}
@@ -2016,9 +2167,9 @@ export default function App() {
               <SlimeMarketPanel
                 coins={state.coins}
                 slimes={state.slimes}
-                trend={getSlimeMarketTrend(Math.floor(Date.now() / 86_400_000))}
                 auctions={state.slimeMarketAuctions}
-                onListSlime={listSlimeForAuction}
+                onSellSlimeNow={sellSlimeNow}
+                onListSlimeAuction={listSlimeForAuction}
                 onBid={placeMarketBid}
                 onInstantBuy={placeMarketInstantBuy}
               />
@@ -2035,9 +2186,11 @@ export default function App() {
             >
               <SlimeArenaPanel
                 slimes={state.slimes}
-                slimeCooldownUntil={state.slimeCooldownUntil}
+                arenaWins={state.arenaWins}
                 slimeArenaAbilityCooldownUntil={state.slimeArenaAbilityCooldownUntil}
                 now={nowMs}
+                onBattleActiveChange={setArenaBattleActive}
+                onReturnToArenaTab={() => setState((s) => ({ ...s, activeTab: 'arena' }))}
                 onBattleEnd={handleArenaBattleEnd}
               />
             </motion.div>
@@ -2068,7 +2221,6 @@ export default function App() {
           active={state.activeTab === 'market'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
           icon={<Dna />}
-          hasNotification={hasBreedingNotification}
         />
         <NavButton 
           active={state.activeTab === 'slimeMarket'} 
@@ -2100,15 +2252,26 @@ export default function App() {
           )}
           <AnimatePresence>
             {isUpgradesOpen && (
-              <motion.div
-                initial={{ y: 300, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 300, opacity: 0 }}
-                className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-4 left-4 z-50 rounded-2xl bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="flex items-center gap-2 font-bold text-emerald-900">
-                    <TrendingUp className="h-4 w-4 text-orange-500" /> Upgrades
+              <>
+                <motion.div
+                  key="upgrades-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-[45] bg-black/40 backdrop-blur-sm"
+                  onClick={() => setIsUpgradesOpen(false)}
+                  aria-hidden
+                />
+                <motion.div
+                  key="upgrades-sheet"
+                  initial={{ y: 300, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 300, opacity: 0 }}
+                  className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-4 left-4 z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-3 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
+                >
+                <div className="mb-2 flex shrink-0 items-center justify-between">
+                  <h3 className="flex items-center gap-1.5 text-sm font-bold text-emerald-900">
+                    <TrendingUp className="h-3.5 w-3.5 shrink-0 text-orange-500" /> Upgrades
                   </h3>
                   <button
                     type="button"
@@ -2118,45 +2281,93 @@ export default function App() {
                     <ChevronRight className="h-5 w-5 rotate-90" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <UpgradeButton
-                    icon={<Zap className="h-4 w-4" />}
-                    name="Speed"
+                <div className="relative min-h-0 flex-1">
+                  <div
+                    ref={upgradesScrollRef}
+                    className="no-scrollbar flex max-h-full min-h-0 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-0.5 pb-0.5"
+                  >
+                  <GameUpgradeRow
+                    title="Move speed"
+                    description="Run faster and reach coins sooner."
                     level={state.upgrades.movementSpeed}
+                    maxLevel={MAX_GAME_UPGRADE_LEVEL.movementSpeed}
+                    currentStat={`${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed) / BASE_MOVEMENT_SPEED) * 100)}% speed`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'movementSpeed')
+                        ? 'MAX'
+                        : `${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed + 1) / BASE_MOVEMENT_SPEED) * 100)}% speed`
+                    }
                     cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
                     canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
-                    onClick={() => buyUpgrade('movementSpeed')}
+                    onPurchase={() => buyUpgrade('movementSpeed')}
                     maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed')}
                   />
-                  <UpgradeButton
-                    icon={<Timer className="h-4 w-4" />}
-                    name="Respawn"
+                  <GameUpgradeRow
+                    title="Faster spawns"
+                    description="Shorten time between coin spawns."
                     level={state.upgrades.respawnTime}
+                    maxLevel={MAX_GAME_UPGRADE_LEVEL.respawnTime}
+                    currentStat={`${(gameRespawnIntervalMs(state.upgrades.respawnTime) / 1000).toFixed(1)}s`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'respawnTime')
+                        ? 'MAX'
+                        : `${(gameRespawnIntervalMs(state.upgrades.respawnTime + 1) / 1000).toFixed(1)}s`
+                    }
                     cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
                     canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
-                    onClick={() => buyUpgrade('respawnTime')}
+                    onPurchase={() => buyUpgrade('respawnTime')}
                     maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime')}
+                    statSubtitle={`+${onScreenCoinCap(state.upgrades.respawnTime)} max on field → +${isGameUpgradeMaxed(state.upgrades, 'respawnTime') ? onScreenCoinCap(state.upgrades.respawnTime) : onScreenCoinCap(state.upgrades.respawnTime + 1)}`}
                   />
-                  <UpgradeButton
-                    icon={<CircleDollarSign className="h-4 w-4 text-yellow-500" />}
-                    name="Value"
+                  <GameUpgradeRow
+                    title="Coin value"
+                    description="More coins each time you collect."
                     level={state.upgrades.coinValue}
+                    maxLevel={MAX_GAME_UPGRADE_LEVEL.coinValue}
+                    currentStat={`${gameCoinValuePerCollect(state.upgrades.coinValue)} base 💰`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'coinValue')
+                        ? 'MAX'
+                        : `${gameCoinValuePerCollect(state.upgrades.coinValue + 1)} base 💰`
+                    }
                     cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
                     canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
-                    onClick={() => buyUpgrade('coinValue')}
+                    onPurchase={() => buyUpgrade('coinValue')}
                     maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue')}
                   />
-                  <UpgradeButton
-                    icon={<Settings className="h-4 w-4" />}
-                    name="Auto"
+                  <GameUpgradeRow
+                    title="Automation"
+                    description="Earn coins while away or in the background."
                     level={state.upgrades.automation}
+                    maxLevel={1}
+                    currentStat={
+                      state.upgrades.automation > 0
+                        ? 'On'
+                        : 'Off'
+                    }
+                    nextStat={
+                      state.upgrades.automation > 0
+                        ? 'MAX'
+                        : `~${computeOfflineIdleGain(
+                            { automation: 1, respawnTime: state.upgrades.respawnTime, coinValue: state.upgrades.coinValue },
+                            60 * 60 * 1000
+                          ).currencyEarned.toLocaleString()} 💰/hr`
+                    }
                     cost={state.upgrades.automation > 0 ? 0 : UPGRADE_COSTS.automation}
                     canAfford={state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation}
-                    onClick={() => buyUpgrade('automation')}
+                    onPurchase={() => buyUpgrade('automation')}
                     maxed={state.upgrades.automation > 0}
                   />
+                  </div>
+                  <div
+                    className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 h-12 bg-gradient-to-t from-orange-50 via-orange-50/75 to-transparent transition-opacity duration-300 ease-out ${
+                      upgradesScrollFadeBottom ? 'opacity-100' : 'opacity-0'
+                    }`}
+                    aria-hidden
+                  />
                 </div>
-              </motion.div>
+                </motion.div>
+              </>
             )}
           </AnimatePresence>
         </>
@@ -2182,39 +2393,83 @@ function NavButton({ active, onClick, icon, hasNotification }: { active: boolean
   );
 }
 
-interface UpgradeButtonProps {
-  icon: React.ReactNode;
-  name: string;
+interface GameUpgradeRowProps {
+  title: string;
+  description: string;
   level: number;
+  maxLevel: number;
+  currentStat: string;
+  nextStat: string;
   cost: number;
   canAfford: boolean;
-  onClick: () => void;
+  onPurchase: () => void;
   maxed?: boolean;
+  /** Extra line (e.g. on-field cap) shown under the description */
+  statSubtitle?: string;
 }
 
-function UpgradeButton({ icon, name, level, cost, canAfford, onClick, maxed }: UpgradeButtonProps) {
+function GameUpgradeRow({
+  title,
+  description,
+  level,
+  maxLevel,
+  currentStat,
+  nextStat,
+  cost,
+  canAfford,
+  onPurchase,
+  maxed,
+  statSubtitle,
+}: GameUpgradeRowProps) {
   const lockedOut = !canAfford || maxed;
   return (
-    <button 
-      onClick={onClick}
-      disabled={lockedOut}
-      className={`flex flex-col gap-1 rounded-xl border p-3 transition-all ${
-        lockedOut
-          ? 'ui-afford-disabled border-zinc-200 bg-zinc-100'
-          : 'border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 hover:border-orange-300'
-      } ${maxed && lockedOut ? 'disabled:cursor-default' : ''}`}
-    >
-      <div className="flex w-full items-center justify-between">
-        <div className={canAfford && !maxed ? 'text-emerald-600' : 'text-zinc-500'}>{icon}</div>
-        <span className="text-[10px] font-black text-zinc-400">LV.{level}</span>
-      </div>
-      <div className="text-left">
-        <div className={`text-xs font-bold ${maxed ? 'text-zinc-500' : canAfford ? 'text-zinc-800' : 'text-zinc-600'}`}>{name}</div>
-        <div className={`text-[10px] font-bold ${maxed ? 'text-orange-600' : canAfford ? 'text-orange-600' : 'text-zinc-600'}`}>
-          {maxed ? 'MAX' : `${cost.toLocaleString()} 💰`}
+    <div className="rounded-lg border border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 p-1.5 shadow-sm">
+      <div className="flex items-start justify-between gap-1.5">
+        <h4 className="text-[10px] font-bold uppercase leading-tight tracking-wide text-emerald-900">{title}</h4>
+        <div className="shrink-0 rounded border border-orange-200/70 bg-orange-50/90 px-1.5 py-px text-[8px] font-black tabular-nums leading-none text-orange-700 shadow-sm">
+          LEVEL {level}/{maxLevel}
         </div>
       </div>
-    </button>
+      <p className="mt-0.5 text-[9px] font-medium leading-tight text-zinc-600">{description}</p>
+      {statSubtitle != null && statSubtitle !== '' && (
+        <p className="mt-px text-[8px] font-semibold leading-tight text-zinc-500">{statSubtitle}</p>
+      )}
+      <div className="mt-1 flex items-center justify-between gap-1.5 rounded-md border border-emerald-100/90 bg-zinc-50/90 px-2 py-1 text-[10px] font-bold tabular-nums leading-tight">
+        <span className="min-w-0 truncate text-zinc-800">{currentStat}</span>
+        <span className="shrink-0 text-zinc-400" aria-hidden>
+          &gt;
+        </span>
+        <span className="min-w-0 truncate text-right text-orange-600">{nextStat}</span>
+      </div>
+      <div className="mt-1 flex gap-1.5">
+        <button
+          type="button"
+          onClick={onPurchase}
+          disabled={lockedOut}
+          className={`min-w-0 flex-[4] rounded-md py-1.5 text-center text-[10px] font-black leading-tight tracking-wide transition-all ${
+            maxed
+              ? 'cursor-default border border-zinc-200 bg-zinc-100 text-zinc-500'
+              : lockedOut
+                ? 'ui-afford-disabled cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500'
+                : 'border border-orange-200 bg-gradient-to-b from-orange-50 to-amber-50 text-orange-800 shadow-sm active:scale-95'
+          }`}
+        >
+          {maxed ? 'Owned' : `${cost.toLocaleString()} 💰`}
+        </button>
+        <button
+          type="button"
+          disabled
+          className={`flex w-11 shrink-0 flex-col items-center justify-center rounded-md border px-0.5 py-1.5 text-[8px] font-black uppercase leading-none shadow-sm ${
+            maxed
+              ? 'border-orange-300/80 bg-gradient-to-b from-orange-100 to-amber-100 text-orange-900'
+              : 'cursor-default border-zinc-200 bg-zinc-100/90 text-zinc-500'
+          }`}
+          title={maxed ? 'At maximum level' : `Max level: ${maxLevel}`}
+        >
+          MAX
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -2232,14 +2487,11 @@ const SlimeCard: React.FC<{
   isEquipped: boolean; 
   onEquip: (id: string) => void;
   onClick: (slime: Slime) => void;
-  cooldownUntil?: number;
-  now: number;
-}> = ({ slime, coins, isEquipped, onEquip, onClick, cooldownUntil = 0, now }) => {
+  detailSeen: boolean;
+}> = ({ slime, coins, isEquipped, onEquip, onClick, detailSeen }) => {
   const hasAffordableStatUpgrade = (['health', 'strength', 'agility'] as const).some(
     (stat) => coins >= SLIME_UPGRADE_COST(slime.statLevels[stat])
   );
-  const onCd = cooldownUntil > now;
-  const cdLeft = onCd ? cooldownUntil - now : 0;
   return (
     <motion.div 
       initial={{ scale: 0.9, opacity: 0 }}
@@ -2249,20 +2501,9 @@ const SlimeCard: React.FC<{
         isEquipped ? 'border-orange-200 bg-gradient-to-b from-amber-50 to-orange-50 ring-1 ring-orange-200/60' : 'border-emerald-100/80 bg-white hover:border-orange-200/60'
       }`}
     >
-      {onCd && (
-        <div
-          className="pointer-events-none absolute -left-0.5 -top-0.5 z-10 flex max-w-[calc(100%+4px)] items-center gap-0.5 rounded-md bg-zinc-800/92 px-1 py-0.5 text-[7px] font-black text-amber-100 shadow-md ring-1 ring-white/40"
-          title="Arena cooldown"
-        >
-          <Timer className="h-2.5 w-2.5 shrink-0" aria-hidden />
-          {formatSlimeCooldownShort(cdLeft)}
-        </div>
-      )}
       {hasAffordableStatUpgrade && (
         <div
-          className={`pointer-events-none absolute z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white ${
-            onCd ? 'bottom-0.5 right-0.5' : '-right-0.5 -top-0.5'
-          }`}
+          className="pointer-events-none absolute -right-0.5 -top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white"
           aria-hidden
         >
           <ArrowUp className="h-3 w-3" strokeWidth={2.75} />
@@ -2272,6 +2513,12 @@ const SlimeCard: React.FC<{
         className="w-10 h-10 rounded-full mb-2 shadow-inner relative overflow-hidden flex items-center justify-center" 
         style={{ backgroundColor: slime.color }}
       >
+        {!detailSeen && (
+          <span
+            className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 shadow-md ring-2 ring-white"
+            aria-hidden
+          />
+        )}
         <div className="flex gap-1.5">
           <div className="w-2 h-2 bg-white rounded-full relative">
             <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />

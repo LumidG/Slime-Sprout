@@ -57,6 +57,16 @@ export interface SlimeMarketAuction {
   highBidder: 'player' | 'npc' | null;
   /** Coins the local player currently has committed as the high bid (only if highBidder === 'player'). */
   playerBidAmount: number;
+  /**
+   * NPC listing only: set after the player places any bid; instant buy stays disabled until this
+   * auction ends (even if an NPC later outbids them).
+   */
+  npcInstantBuyLocked?: boolean;
+  /**
+   * Player listing only: guaranteed coins you would have had from “sell now” for this slime — used
+   * for UI and for NPC bid simulation (auction starts below this, may later exceed it).
+   */
+  playerSellNowSnapshot?: number;
 }
 
 export interface GameState {
@@ -74,6 +84,8 @@ export interface GameState {
 
   // Slimes
   slimes: Slime[];
+  /** Slime ids whose detail modal has been opened at least once (persists). */
+  slimeDetailSeenIds: string[];
   equippedSlimeIds: string[];
   eggs: number;
   hatchingEgg: {
@@ -86,16 +98,12 @@ export interface GameState {
   slimeMarketAuctions: SlimeMarketAuction[];
 
   /**
-   * Slime id → timestamp (ms) when arena cooldown ends. While active, that slime grants
-   * no coin-trait bonuses and no in-world trait bursts when equipped.
-   */
-  slimeCooldownUntil: Record<string, number>;
-
-  /**
-   * Slime id → timestamp (ms) when arena **ability** cooldown ends (separate from
-   * `slimeCooldownUntil`, which is the penalty after losing a fight).
+   * Slime id → timestamp (ms) when arena **ability** cooldown ends (after using an ability in battle).
    */
   slimeArenaAbilityCooldownUntil: Record<string, number>;
+
+  /** Lifetime arena victories; used to ease the first couple of encounters for new teams. */
+  arenaWins: number;
 
   // UI State
   activeTab: 'game' | 'slimes' | 'market' | 'slimeMarket' | 'arena';
@@ -122,11 +130,7 @@ export interface GameState {
   /** App preferences (persisted). Used when game audio is wired up. */
   settings: {
     musicEnabled: boolean;
-    /** Music volume 0–1 when music is enabled. */
-    musicVolume: number;
     sfxEnabled: boolean;
-    /** Sound effects volume 0–1 when SFX are enabled. */
-    sfxVolume: number;
     /** Subtle native haptics on button taps (Capacitor Android/iOS). */
     hapticsEnabled: boolean;
   };
@@ -143,13 +147,14 @@ export const INITIAL_STATE: GameState = {
     coinValue: 1,
   },
   slimes: [],
+  slimeDetailSeenIds: [],
   equippedSlimeIds: [],
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
   slimeMarketAuctions: [],
-  slimeCooldownUntil: {},
   slimeArenaAbilityCooldownUntil: {},
+  arenaWins: 0,
   activeTab: 'game',
   activeSubTab: 'collect',
   hasCompletedOnboarding: false,
@@ -159,9 +164,7 @@ export const INITIAL_STATE: GameState = {
   worldOrderSandFlowerSwap: true,
   settings: {
     musicEnabled: true,
-    musicVolume: 1,
     sfxEnabled: true,
-    sfxVolume: 1,
     hapticsEnabled: false,
   },
 };

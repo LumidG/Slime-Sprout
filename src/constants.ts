@@ -18,9 +18,13 @@ export const SUPPORT_MAILTO =
 export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
 
-/** Max coins on screen: 2 per respawn-time upgrade level (2, 4, 6, …). */
+/**
+ * Max coins on screen — scales with respawn tier, capped so late tiers add spawn rate
+ * without stuffing the field (matches ~20 max at tier 10+ from the old 10-level cap).
+ */
 export function onScreenCoinCap(respawnTimeLevel: number): number {
-  return 2 * Math.max(1, Math.floor(respawnTimeLevel));
+  const raw = 2 * Math.max(1, Math.floor(respawnTimeLevel));
+  return Math.min(20, raw);
 }
 
 /**
@@ -42,6 +46,38 @@ export const COIN_SPAWN_INSET_X_WITH_WORLD_NAV = 52;
 export const BASE_RESPAWN_TIME = 3000; // ms
 export const BASE_MOVEMENT_SPEED = 1.5;
 
+/** Player base move speed at a movement upgrade level (before buffs) — matches `GameWorld`. */
+export function gamePlayerBaseSpeedAtLevel(movementSpeedLevel: number): number {
+  /** 0.03/level × 20 tiers ≈ old 0.06/level × 10 (same end speed at area completion). */
+  return BASE_MOVEMENT_SPEED * (1 + movementSpeedLevel * 0.03);
+}
+
+/** Flat speed gained from the next movement upgrade (constant every level). */
+export function gameMovementSpeedFlatBonusPerLevel(): number {
+  return BASE_MOVEMENT_SPEED * 0.03;
+}
+
+/** Time between coin spawns — matches `GameWorld` / automation idle math. */
+export function gameRespawnIntervalMs(respawnTimeLevel: number): number {
+  /** 0.1/tier × 20 ≈ old 0.2/tier × 10 (same min interval at max). */
+  return BASE_RESPAWN_TIME / (1 + respawnTimeLevel * 0.1);
+}
+
+/**
+ * Base coins per collect from the coin-value upgrade **tier** (1–20). Every ~2 tiers +1 💰 so max
+ * stays 10 like the old 10-level shop, spread across 20 purchases.
+ */
+export function gameCoinValuePerCollect(coinValueTier: number): number {
+  const t = Math.max(1, Math.floor(coinValueTier));
+  return Math.max(1, Math.min(10, Math.ceil(t / 2)));
+}
+
+/** How much shorter the spawn interval gets after the next respawn upgrade. */
+export function gameRespawnNextIntervalReductionMs(currentLevel: number): number {
+  if (currentLevel >= MAX_GAME_UPGRADE_LEVEL.respawnTime) return 0;
+  return gameRespawnIntervalMs(currentLevel) - gameRespawnIntervalMs(currentLevel + 1);
+}
+
 /** Max simulated offline time when applying automation idle gains (matches load/save logic). */
 export const OFFLINE_IDLE_CAP_MS = 12 * 60 * 60 * 1000;
 
@@ -57,10 +93,10 @@ export function computeOfflineIdleGain(
     return { idleCoins: 0, currencyEarned: 0 };
   }
   const capped = Math.min(elapsedMs, OFFLINE_IDLE_CAP_MS);
-  const respawnInterval = BASE_RESPAWN_TIME / (1 + upgrades.respawnTime * 0.2);
+  const respawnInterval = gameRespawnIntervalMs(upgrades.respawnTime);
   const coinsPerSecond = 1 / (respawnInterval / 1000);
   const idleCoins = Math.floor((capped / 1000) * coinsPerSecond);
-  const currencyEarned = idleCoins * upgrades.coinValue;
+  const currencyEarned = idleCoins * gameCoinValuePerCollect(upgrades.coinValue);
   return { idleCoins, currencyEarned };
 }
 
@@ -109,19 +145,49 @@ export const TRAIT_EFFECTS: Record<SlimeTrait, {
 
 export const MAX_EQUIPPED_SLIMES = 3;
 
-/** Arena: losing a fight puts all participating slimes on cooldown everywhere. */
-export const ARENA_COOLDOWN_MS = 5 * 60 * 1000;
-
-/** Arena squad: 3 starters + up to 2 reserves. */
-export const ARENA_STARTERS = 3;
-export const ARENA_RESERVES = 2;
+/** Arena: both player and enemy teams field this many slimes. */
+export const ARENA_TEAM_SIZE = 4;
 
 /** Arena battle: energy orbs fill the ability bar; one use when it reaches full. */
 export const ARENA_ENERGY_PER_ORB = 0.26;
 export const ARENA_ENERGY_ORBS_PER_SIDE = 5;
-export const ARENA_ENERGY_RESPAWN_MS = 1100;
+
+/**
+ * Arena fight length multiplier. Outcome is computed from slime stats / encounter only — not this value —
+ * so tuning time here does not change who wins.
+ * Orb respawn and ability VFX duration scale with this so pacing stays similar across a longer fight.
+ */
+export const ARENA_BATTLE_TIME_SCALE = 2;
+
+const ARENA_BATTLE_DURATION_BASE_MS = 5500;
+const ARENA_ENERGY_RESPAWN_BASE_MS = 1100;
+const ARENA_ABILITY_PROC_BASE_MS = 700;
+
+export const ARENA_ENERGY_RESPAWN_MS = ARENA_ENERGY_RESPAWN_BASE_MS * ARENA_BATTLE_TIME_SCALE;
 /** Fade duration for ability-use VFX after the bar fires. */
-export const ARENA_ABILITY_PROC_MS = 700;
+export const ARENA_ABILITY_PROC_MS = ARENA_ABILITY_PROC_BASE_MS * ARENA_BATTLE_TIME_SCALE;
+/** How long the arena battle canvas runs before the outcome resolves (ms). */
+export const ARENA_BATTLE_DURATION_MS = ARENA_BATTLE_DURATION_BASE_MS * ARENA_BATTLE_TIME_SCALE;
+
+/** Display time for each 3 → 2 → 1 step before the arena sim runs (ms). */
+export const ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS = 900;
+
+/** Center-to-center distance opposing slimes are pushed to (no stacking). */
+export const ARENA_MELEE_MIN_SEPARATION_PX = 28;
+/** Decorative melee hits only when distance is in this band (px). */
+export const ARENA_MELEE_MIN_ATTACK_DIST_PX = 26;
+export const ARENA_MELEE_MAX_ATTACK_DIST_PX = 50;
+/** Decorative HP removed per single strike; win/loss is still stat-based elsewhere. */
+export const ARENA_MELEE_HIT_DAMAGE = 0.048;
+/**
+ * Minimum time from the start of one pair strike to the start of the next (player ↔ enemy).
+ * Keeps swings readable; should be ≥ attack anim + {@link ARENA_MELEE_POST_SWING_MS}.
+ */
+export const ARENA_MELEE_PAIR_ATTACK_INTERVAL_MS = 920;
+/** Quiet beat after a swing’s VFX ends before the next strike can begin (ms). */
+export const ARENA_MELEE_POST_SWING_MS = 480;
+/** Length of one melee “special attack” animation cycle (ms). */
+export const ARENA_MELEE_ATTACK_ANIM_MS = 380;
 
 export const ARENA_ABILITIES: SlimeArenaAbility[] = [
   'None',
@@ -140,27 +206,27 @@ export const ARENA_ABILITY_META: Record<
   None: { name: 'None', description: 'No arena skill.', cooldownMs: 0 },
   Rally: {
     name: 'Rally',
-    description: 'Arena: +15 effective power when used this fight.',
+    description: 'Arena: +20 effective power when used this fight.',
     cooldownMs: 3 * 60 * 1000,
   },
   Fortify: {
     name: 'Fortify',
-    description: 'Arena: adds 40% of Health as bonus power.',
+    description: 'Arena: adds 50% of Health as bonus power.',
     cooldownMs: 3 * 60 * 1000,
   },
   Smash: {
     name: 'Smash',
-    description: 'Arena: adds 50% of Strength as bonus power.',
+    description: 'Arena: adds 55% of Strength as bonus power.',
     cooldownMs: 3 * 60 * 1000,
   },
   Rush: {
     name: 'Rush',
-    description: 'Arena: adds 50% of Agility as bonus power.',
+    description: 'Arena: adds 55% of Agility as bonus power.',
     cooldownMs: 3 * 60 * 1000,
   },
   Harmony: {
     name: 'Harmony',
-    description: 'Arena: adds 12% of this slime’s matchup score as bonus power.',
+    description: 'Arena: adds 15% of this slime’s matchup score as bonus power.',
     cooldownMs: 4 * 60 * 1000,
   },
 };
@@ -216,7 +282,7 @@ export function getArenaStatLabel(stat: keyof SlimeStats): string {
 }
 
 /** Procedural opponent: weights show what matters; power and reward stay hidden until after the fight. */
-export function generateArenaEncounter(seed: number): ArenaEncounter {
+export function generateArenaEncounter(seed: number, arenaWins = 0): ArenaEncounter {
   const r = arenaRand(seed + 42_001);
   const stats: (keyof SlimeStats)[] = ['health', 'strength', 'agility'];
   const primaryStat = stats[Math.floor(r() * 3)]!;
@@ -235,7 +301,20 @@ export function generateArenaEncounter(seed: number): ArenaEncounter {
   weights.strength /= sum;
   weights.agility /= sum;
 
-  const enemyPower = 95 + Math.floor(r() * 145);
+  /**
+   * First three lifetime arena wins use a very soft curve (plus {@link arenaEarlyFightPlayerPowerBonus})
+   * so fresh hatched slimes almost always win without upgrades.
+   */
+  let enemyPower: number;
+  if (arenaWins <= 0) {
+    enemyPower = 14 + Math.floor(r() * 11);
+  } else if (arenaWins === 1) {
+    enemyPower = 19 + Math.floor(r() * 11);
+  } else if (arenaWins === 2) {
+    enemyPower = 23 + Math.floor(r() * 10);
+  } else {
+    enemyPower = 95 + Math.floor(r() * 145);
+  }
   const rewardCoins = 32 + Math.floor(enemyPower * 0.38);
 
   return {
@@ -264,7 +343,7 @@ export function generateArenaEnemyTeam(encounter: ArenaEncounter): ArenaEnemyDis
   const second = ['claw', 'fang', 'mire', 'veil', 'puff', 'wisp', 'gloom', 'shade'];
   const colors = ['#6d28d9', '#b91c1c', '#0d9488', '#c026d3', '#2563eb', '#ca8a04', '#4b5563'];
   const abilities: SlimeArenaAbility[] = ['Rally', 'Fortify', 'Smash', 'Rush', 'Harmony'];
-  return [0, 1, 2].map((i) => {
+  return Array.from({ length: ARENA_TEAM_SIZE }, (_, i) => i).map((i) => {
     const a = r() > 0.15 ? abilities[Math.floor(r() * abilities.length)]! : 'None';
     return {
       id: `arena-enemy-${encounter.seed}-${i}`,
@@ -293,15 +372,15 @@ export function arenaAbilityBonus(
   const base = arenaWeightedScore(slime, weights);
   switch (ability) {
     case 'Rally':
-      return 15;
+      return 20;
     case 'Fortify':
-      return slime.stats.health * 0.4;
+      return slime.stats.health * 0.5;
     case 'Smash':
-      return slime.stats.strength * 0.5;
+      return slime.stats.strength * 0.55;
     case 'Rush':
-      return slime.stats.agility * 0.5;
+      return slime.stats.agility * 0.55;
     case 'Harmony':
-      return base * 0.12;
+      return base * 0.15;
     default:
       return 0;
   }
@@ -317,38 +396,30 @@ function slimeLinePower(
   return base + arenaAbilityBonus(slime.arenaAbility, slime, weights);
 }
 
+/** Extra effective power for the first few lifetime fights (see {@link generateArenaEncounter}). */
+export function arenaEarlyFightPlayerPowerBonus(arenaWinsBeforeBattle: number): number {
+  if (arenaWinsBeforeBattle <= 0) return 20;
+  if (arenaWinsBeforeBattle === 1) return 15;
+  if (arenaWinsBeforeBattle === 2) return 12;
+  return 0;
+}
+
 export function resolveArenaBattle(
   encounter: ArenaEncounter,
-  starters: [Slime, Slime, Slime],
-  reserves: [Slime | undefined, Slime | undefined],
+  team: [Slime, Slime, Slime, Slime],
   /** Slime ids that activate their arena ability this fight (must be off ability cooldown). */
-  arenaAbilityUsedIds: Record<string, boolean> = {}
+  arenaAbilityUsedIds: Record<string, boolean> = {},
+  /** Lifetime wins before this battle — used for early-fight player power bonus only. */
+  arenaWinsBeforeBattle = 999
 ): { won: boolean } {
   const enemy = encounter.enemyPower;
   const w = encounter.weights;
   const use = (s: Slime) => Boolean(arenaAbilityUsedIds[s.id]);
-  let p =
-    slimeLinePower(starters[0], w, use(starters[0])) +
-    slimeLinePower(starters[1], w, use(starters[1])) +
-    slimeLinePower(starters[2], w, use(starters[2]));
-  if (p >= enemy) return { won: true };
-  if (reserves[0]) {
-    p += slimeLinePower(reserves[0], w, use(reserves[0]));
-    if (p >= enemy) return { won: true };
+  let p = arenaEarlyFightPlayerPowerBonus(arenaWinsBeforeBattle);
+  for (const s of team) {
+    p += slimeLinePower(s, w, use(s));
   }
-  if (reserves[1]) {
-    p += slimeLinePower(reserves[1], w, use(reserves[1]));
-    if (p >= enemy) return { won: true };
-  }
-  return { won: false };
-}
-
-export function isSlimeOnCooldown(
-  slimeCooldownUntil: Record<string, number>,
-  slimeId: string,
-  now: number = Date.now()
-): boolean {
-  return (slimeCooldownUntil[slimeId] ?? 0) > now;
+  return { won: p >= enemy };
 }
 
 export function isArenaAbilityOnCooldown(
@@ -360,18 +431,20 @@ export function isArenaAbilityOnCooldown(
 }
 
 export const UPGRADE_COSTS = {
-  automation: 25,
-  movementSpeed: (level: number) => Math.floor(10 * Math.pow(1.5, level)),
-  respawnTime: (level: number) => Math.floor(15 * Math.pow(1.6, level)),
-  /** Cost to buy the next level: 1, 2, 3, … (current level = price). */
-  coinValue: (level: number) => level,
+  /** One-time unlock; kept affordable early so automation comes online quickly. */
+  automation: 18,
+  /** Softer exponent so 20 tiers stay grindable (was tuned for 10 tiers). */
+  movementSpeed: (level: number) => Math.floor(10 * Math.pow(1.19, level)),
+  respawnTime: (level: number) => Math.floor(12 * Math.pow(1.36, level)),
+  /** Cost for the next coin-value tier (current tier = `level`). */
+  coinValue: (level: number) => Math.max(1, Math.floor((level + 1) / 2)),
 };
 
 /** Caps for shop upgrades on the game tab (automation is 0/1). */
 export const MAX_GAME_UPGRADE_LEVEL = {
-  movementSpeed: 10,
-  respawnTime: 10,
-  coinValue: 10,
+  movementSpeed: 20,
+  respawnTime: 20,
+  coinValue: 20,
 } as const;
 
 export type GameUpgradeSnapshot = {
@@ -475,12 +548,20 @@ export function migrateMaxUnlockedToSandFlowerOrder(oldMax: number): number {
   return Math.min(5, maxNew);
 }
 
-export const EGG_COST = 100;
+/** Slightly easier first egg than the old 100 so new players reach collection loop sooner. */
+export const EGG_COST = 85;
 
 /** Coins required to breed two slimes (market tab). */
 export const BREEDING_COST = 500;
 
 export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.8, level));
+
+/** Stat increase per upgrade; must match slime stat upgrade logic in App. */
+export const SLIME_STAT_UPGRADE_DELTA: Record<keyof SlimeStats, number> = {
+  health: 5,
+  strength: 2,
+  agility: 2,
+};
 
 export const SLIME_NAMES = [
   'Bloop', 'Gloop', 'Squish', 'Pudding', 'Jelly', 'Mochi', 'Bubbles', 'Dewy',
@@ -496,65 +577,14 @@ export const SLIME_MARKET_AUCTION_MS = 4 * 60 * 1000;
 /** Minimum step between bids. */
 export const SLIME_MARKET_MIN_BID_STEP = 40;
 
+/**
+ * Each {@link processSlimeMarketTick} (~2.8s): chance an NPC outbids the player on an NPC-run
+ * auction they were winning (background “competition”).
+ */
+export const SLIME_MARKET_NPC_OUTBID_PLAYER_CHANCE = 0.09;
+
 /** How many NPC-run auctions to keep in rotation. */
 export const SLIME_MARKET_NPC_TARGET_LISTINGS = 4;
-
-/** Seeded PRNG for daily market copy (deterministic per day index). */
-function marketRand(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
-    return s / 0xffffffff;
-  };
-}
-
-const STAT_LABEL: Record<keyof SlimeStats, string> = {
-  health: 'Health',
-  strength: 'Strength',
-  agility: 'Agility',
-};
-
-export type SlimeMarketTrend = {
-  mood: string;
-  hotTraitA: SlimeTrait;
-  hotTraitB: SlimeTrait;
-  hotStat: keyof SlimeStats;
-  hotStatLabel: string;
-  avgSaleBand: string;
-  footnote: string;
-};
-
-/** Daily rotating “market report” for the Slime Market header. */
-export function getSlimeMarketTrend(dayIndex: number): SlimeMarketTrend {
-  const r = marketRand(dayIndex + 1337);
-  const traitPool = TRAITS.filter((t) => t !== 'None');
-  const hotTraitA = traitPool[Math.floor(r() * traitPool.length)]!;
-  let hotTraitB = traitPool[Math.floor(r() * traitPool.length)]!;
-  if (hotTraitB === hotTraitA && traitPool.length > 1) {
-    hotTraitB = traitPool.filter((t) => t !== hotTraitA)[Math.floor(r() * (traitPool.length - 1))]!;
-  }
-  const stats: (keyof SlimeStats)[] = ['health', 'strength', 'agility'];
-  const hotStat = stats[Math.floor(r() * stats.length)]!;
-  const moods = ['Bullish', 'Active', 'Heated', 'Calm', 'Frenzied', 'Soft'];
-  const mood = moods[Math.floor(r() * moods.length)]!;
-  const low = 80 + Math.floor(r() * 120);
-  const high = low + 40 + Math.floor(r() * 80);
-  const footnotes = [
-    'Collectors are paying more for matching trait pairs.',
-    'Rare colors are moving faster than yesterday.',
-    'Low-level slimes still sell — trainers want blanks to upgrade.',
-    'High agility slimes are popular in the Grass Fields meta.',
-  ];
-  return {
-    mood,
-    hotTraitA,
-    hotTraitB,
-    hotStat,
-    hotStatLabel: STAT_LABEL[hotStat],
-    avgSaleBand: `${low}–${high}`,
-    footnote: footnotes[Math.floor(r() * footnotes.length)]!,
-  };
-}
 
 /** Procedural slime for NPC market listings (not from player collection). */
 export function createNpcMarketSlime(): Slime {
@@ -576,20 +606,101 @@ export function createNpcMarketSlime(): Slime {
   };
 }
 
+/** Guaranteed coins when selling a slime immediately (no auction). */
+export function getPlayerSellNowPrice(slime: Slime): number {
+  return Math.max(1, Math.floor(slime.value * 0.9));
+}
+
+/**
+ * Opening minimum bid for a player-listed auction — always below {@link getPlayerSellNowPrice}
+ * for the same slime so the auction starts at a lower offer.
+ */
+export function getPlayerAuctionOpeningMinBid(slime: Slime, sellNowSnapshot: number): number {
+  const fromValue = Math.floor(slime.value * 0.48);
+  const fromSellNow = Math.floor(sellNowSnapshot * 0.52);
+  return Math.max(35, Math.min(fromValue, fromSellNow));
+}
+
+/**
+ * Simulates one NPC bid tick on a player’s listing: usually small steps that stay under the quick
+ * sale price, sometimes a larger jump that can exceed it.
+ */
+export function tickPlayerListingNpcBid(a: SlimeMarketAuction): SlimeMarketAuction {
+  if (a.seller !== 'player' || a.highBidder === 'player') return a;
+  if (Math.random() >= 0.14) return a;
+
+  const sellNow =
+    a.playerSellNowSnapshot ?? Math.max(1, Math.floor(a.slime.value * 0.9));
+  const lowCeiling = Math.max(a.minBid, Math.floor(sellNow * 0.88));
+  const highCeiling = Math.floor(a.slime.value * 2.0);
+
+  if (a.currentBid === 0) {
+    const bid = a.minBid;
+    if (bid > highCeiling) return a;
+    return { ...a, currentBid: bid, highBidder: 'npc' };
+  }
+
+  const stayLow = Math.random() < 0.55;
+  const extraSteps = stayLow ? 1 + Math.floor(Math.random() * 2) : 3 + Math.floor(Math.random() * 6);
+  const delta = extraSteps * SLIME_MARKET_MIN_BID_STEP;
+  let nextBid = a.currentBid + delta;
+  const ceiling = stayLow ? Math.min(lowCeiling, highCeiling) : highCeiling;
+  if (nextBid > ceiling) {
+    if (stayLow) return a;
+    nextBid = ceiling;
+  }
+  if (nextBid <= a.currentBid) return a;
+  return { ...a, currentBid: nextBid, highBidder: 'npc' };
+}
+
+type NpcListingOutbidResult = { auction: SlimeMarketAuction; refund: number };
+
+/**
+ * Randomly outbids the player on an NPC seller listing so the UI can return to “Bid” at a higher
+ * price without the player tapping again. Refunds the player’s escrow when an outbid happens.
+ */
+function tickNpcListingOutbidPlayer(a: SlimeMarketAuction): NpcListingOutbidResult {
+  if (a.seller !== 'npc' || a.highBidder !== 'player' || a.playerBidAmount <= 0) {
+    return { auction: a, refund: 0 };
+  }
+  if (Math.random() >= SLIME_MARKET_NPC_OUTBID_PLAYER_CHANCE) {
+    return { auction: a, refund: 0 };
+  }
+
+  const cap = Math.floor(a.slime.value * 2.4);
+  const playerBid = a.playerBidAmount;
+  const minNpc = playerBid + SLIME_MARKET_MIN_BID_STEP;
+  if (minNpc > cap) return { auction: a, refund: 0 };
+
+  const extraSteps = 1 + Math.floor(Math.random() * 4);
+  let npcBid = playerBid + extraSteps * SLIME_MARKET_MIN_BID_STEP;
+  if (npcBid > cap) npcBid = cap;
+  if (npcBid <= playerBid) return { auction: a, refund: 0 };
+
+  return {
+    auction: {
+      ...a,
+      currentBid: npcBid,
+      highBidder: 'npc',
+      playerBidAmount: 0,
+    },
+    refund: playerBid,
+  };
+}
+
 export function getNextMarketBid(a: SlimeMarketAuction): number {
   if (a.currentBid === 0 && a.highBidder === null) return a.minBid;
   return a.currentBid + SLIME_MARKET_MIN_BID_STEP;
 }
 
 /**
- * NPC listing: pay this now (always strictly less than {@link getNextMarketBid}) to take the slime
- * immediately without waiting for the auction to end.
+ * NPC listing: pay this now to take the slime immediately. Always strictly greater than
+ * {@link getNextMarketBid} so bidding is the cheaper path.
  */
 export function getInstantNpcBuyPrice(a: SlimeMarketAuction): number {
   const next = getNextMarketBid(a);
-  if (next <= 1) return 1;
-  const raw = Math.floor(next * 0.72);
-  return Math.max(1, Math.min(next - 1, raw));
+  const premium = Math.max(SLIME_MARKET_MIN_BID_STEP, Math.ceil(next * 0.2));
+  return next + premium;
 }
 
 /**
@@ -629,15 +740,16 @@ export function processSlimeMarketTick(prev: GameState): GameState {
     }
   }
 
-  const ticked = stillActive.map((a) => {
-    if (a.seller !== 'player' || a.endsAt <= now) return a;
-    if (a.highBidder === 'player') return a;
-    if (Math.random() >= 0.14) return a;
-    const step = a.currentBid === 0 ? a.minBid : a.currentBid + SLIME_MARKET_MIN_BID_STEP;
-    const cap = Math.floor(a.slime.value * 1.85);
-    if (step > cap) return a;
-    return { ...a, currentBid: step, highBidder: 'npc' as const };
-  });
+  const ticked: SlimeMarketAuction[] = [];
+  for (const a of stillActive) {
+    if (a.seller === 'player') {
+      ticked.push(tickPlayerListingNpcBid(a));
+    } else {
+      const { auction, refund } = tickNpcListingOutbidPlayer(a);
+      coins += refund;
+      ticked.push(auction);
+    }
+  }
 
   let result = [...ticked];
   let npcCount = result.filter((x) => x.seller === 'npc').length;

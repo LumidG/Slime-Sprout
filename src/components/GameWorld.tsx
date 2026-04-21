@@ -7,8 +7,8 @@ import {
   onScreenCoinCap, 
   COIN_SPAWN_INSETS,
   COIN_SPAWN_INSET_X_WITH_WORLD_NAV,
-  BASE_RESPAWN_TIME, 
-  BASE_MOVEMENT_SPEED, 
+  gamePlayerBaseSpeedAtLevel,
+  gameRespawnIntervalMs,
   BASE_SLIME_SPEED,
   BASE_COLLECT_RADIUS,
   BASE_SLIME_COLLECT_RADIUS,
@@ -592,7 +592,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }));
   }, [insetLeftForWorldNav, insetRightForWorldNav]);
 
-  const respawnInterval = BASE_RESPAWN_TIME / (1 + respawnTimeLevel * 0.2);
+  const respawnInterval = gameRespawnIntervalMs(respawnTimeLevel);
 
   useGameLoop((deltaTime) => {
     const ctx = canvasRef.current?.getContext('2d');
@@ -618,7 +618,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     });
 
     const movementSpeed =
-      BASE_MOVEMENT_SPEED * (1 + movementSpeedLevel * 0.06) * (1 + playerSpeedBuff);
+      gamePlayerBaseSpeedAtLevel(movementSpeedLevel) * (1 + playerSpeedBuff);
     const collectionRadius = BASE_COLLECT_RADIUS * (1 + globalRadiusBuff);
 
     const { width, height } = dimensionsRef.current;

@@ -10,12 +10,37 @@ import {
   ARENA_ENERGY_ORBS_PER_SIDE,
   ARENA_ENERGY_RESPAWN_MS,
   ARENA_ABILITY_PROC_MS,
+  ARENA_MELEE_MIN_SEPARATION_PX,
+  ARENA_MELEE_MIN_ATTACK_DIST_PX,
+  ARENA_MELEE_MAX_ATTACK_DIST_PX,
+  ARENA_MELEE_HIT_DAMAGE,
+  ARENA_MELEE_PAIR_ATTACK_INTERVAL_MS,
+  ARENA_MELEE_POST_SWING_MS,
+  ARENA_MELEE_ATTACK_ANIM_MS,
+  ARENA_TEAM_SIZE,
   type ArenaEnemyDisplay,
 } from '../constants';
 
 type EnergyOrb = { id: number; x: number; y: number; scale: number };
 
 type SlimePos = { x: number; y: number; targetId?: number };
+
+/** Vertical lineup on the left or right edge of the arena (paired slots face each other across X). */
+function arenaVerticalSideAnchor(
+  width: number,
+  height: number,
+  index: number,
+  teamSize: number,
+  side: 'left' | 'right'
+): { x: number; y: number } {
+  const marginX = Math.max(14, width * 0.07);
+  const x = side === 'left' ? marginX : width - marginX;
+  const marginY = 28;
+  const span = Math.max(0, height - 2 * marginY);
+  const y =
+    teamSize <= 1 ? height * 0.5 : marginY + (index / Math.max(1, teamSize - 1)) * span;
+  return { x, y };
+}
 
 function enemyAsSlime(e: ArenaEnemyDisplay): Slime {
   return {
@@ -153,6 +178,151 @@ function drawArenaAbilityVfx(
   ctx.restore();
 }
 
+/** Directional melee swing VFX (orbiting arena abilities are separate). Faces toward (tx, ty) unit vector. */
+function drawArenaMeleeSpecialAttackVfx(
+  ctx: CanvasRenderingContext2D,
+  ability: SlimeArenaAbility,
+  progress: number,
+  tx: number,
+  ty: number,
+  drawRadius: number
+) {
+  const fade = Math.sin(progress * Math.PI);
+  if (fade < 0.02) return;
+
+  const ang = Math.atan2(ty, tx);
+  ctx.save();
+  ctx.rotate(ang);
+
+  switch (ability) {
+    case 'None': {
+      const sweep = progress * 0.95;
+      for (let i = 0; i < 3; i++) {
+        ctx.strokeStyle = `rgba(255,255,255,${0.45 + 0.45 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(drawRadius + 2 + i * 2, i * 3 - 3, 12 + i * 3, -0.55 - sweep * 0.4, 0.35 + sweep * 0.35);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = `rgba(248, 250, 252, ${0.5 * fade})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(drawRadius + 4, -8);
+      ctx.lineTo(drawRadius + 22 + progress * 10, -2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(drawRadius + 6, 4);
+      ctx.lineTo(drawRadius + 20 + progress * 8, 10);
+      ctx.stroke();
+      break;
+    }
+    case 'Rally': {
+      const n = 10;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + progress * 0.4;
+        const len = drawRadius + 6 + progress * 24;
+        ctx.strokeStyle = `rgba(250, 204, 21, ${0.55 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (drawRadius + 1), Math.sin(a) * (drawRadius + 1));
+        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(253, 224, 71, ${0.28 * fade})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, drawRadius + 5 + progress * 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(245, 158, 11, ${0.75 * fade})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, drawRadius + 8 + progress * 6, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case 'Fortify': {
+      ctx.fillStyle = `rgba(148, 163, 184, ${0.5 * fade})`;
+      ctx.beginPath();
+      ctx.moveTo(drawRadius * 0.15, -drawRadius * 1.15);
+      ctx.lineTo(drawRadius * 1.75 + progress * 14, -drawRadius * 0.85);
+      ctx.lineTo(drawRadius * 1.75 + progress * 14, drawRadius * 0.85);
+      ctx.lineTo(drawRadius * 0.15, drawRadius * 1.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = `rgba(226, 232, 240, ${0.85 * fade})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = `rgba(71, 85, 105, ${0.35 * fade})`;
+      ctx.beginPath();
+      ctx.roundRect(drawRadius * 0.4, -drawRadius * 0.5, drawRadius * 1.1 + progress * 6, drawRadius, 3);
+      ctx.fill();
+      break;
+    }
+    case 'Smash': {
+      const swing = progress * Math.PI * 0.9;
+      ctx.strokeStyle = `rgba(234, 88, 12, ${0.9 * fade})`;
+      ctx.lineWidth = 4 + progress * 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 0, drawRadius + 20, -0.45 - swing * 0.45, -0.45 + swing);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(251, 146, 60, ${0.45 * fade})`;
+      ctx.beginPath();
+      ctx.arc(drawRadius + 16, 0, 7 + progress * 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.35 * fade;
+      ctx.fillStyle = 'rgba(185, 28, 28, 0.6)';
+      ctx.beginPath();
+      ctx.arc(drawRadius + 18, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'Rush': {
+      for (let k = 0; k < 6; k++) {
+        const off = k * 4 - 10;
+        ctx.globalAlpha = (0.4 - k * 0.05) * fade;
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.95)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-10 - progress * 32, off);
+        ctx.lineTo(drawRadius + 8 + progress * 10, off);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.5 * fade;
+      ctx.fillStyle = 'rgba(103, 232, 249, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(drawRadius + 8, 0, 18 + progress * 14, 9 + progress * 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'Harmony': {
+      for (let r = 0; r < 5; r++) {
+        const hue = (r * 72 + progress * 100) % 360;
+        ctx.strokeStyle = `hsla(${hue}, 82%, 62%, ${0.75 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(
+          0,
+          0,
+          drawRadius + 8 + r * 6,
+          progress * Math.PI + r * 0.4,
+          progress * Math.PI + r * 0.4 + Math.PI * 0.55
+        );
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(168, 85, 247, ${0.2 * fade})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, drawRadius + 14 + progress * 6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    default:
+      break;
+  }
+  ctx.restore();
+}
+
 function drawHpBarArena(
   ctx: CanvasRenderingContext2D,
   ratio: number,
@@ -203,19 +373,18 @@ function drawArenaEnergyBar(ctx: CanvasRenderingContext2D, energy01: number, bar
 type Props = {
   playerSlimes: Slime[];
   enemies: ArenaEnemyDisplay[];
-  playerHpRatios: number[];
-  enemyHpRatios: number[];
   playerAbilityFiredRef: React.MutableRefObject<Record<string, boolean>>;
   onAbilityFired?: (id: string) => void;
+  /** When true, the canvas still renders but slime movement, orbs, and melee do not advance. */
+  paused?: boolean;
 };
 
 export function ArenaBattleCanvas({
   playerSlimes,
   enemies,
-  playerHpRatios,
-  enemyHpRatios,
   playerAbilityFiredRef,
   onAbilityFired,
+  paused = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -227,13 +396,21 @@ export function ArenaBattleCanvas({
   const lastAbilityProcRef = useRef<Record<string, number>>({});
   const nextOrbId = useRef(0);
   const lastRespawnRef = useRef(0);
+  /** Decorative 0–1 HP (outcome still uses stat resolution in App). */
+  const hpPlayerRef = useRef<number[]>(Array.from({ length: ARENA_TEAM_SIZE }, () => 1));
+  const hpEnemyRef = useRef<number[]>(Array.from({ length: ARENA_TEAM_SIZE }, () => 1));
+  const hitFlashUntilRef = useRef<Record<string, number>>({});
+  /** Active melee special-attack animation toward opponent. */
+  const meleeAttackAnimRef = useRef<Record<string, { startMs: number; tx: number; ty: number }>>({});
+  /** Per pair index: 0 = player’s turn to strike, 1 = enemy’s turn. */
+  const pairAttackPhaseRef = useRef<number[]>([0, 0, 0, 0]);
+  /** Next allowed strike time (ms); null until first scheduled. */
+  const pairNextAttackRef = useRef<(number | null)[]>([null, null, null, null]);
   const propsRef = useRef({
     playerSlimes,
     enemies,
-    playerHpRatios,
-    enemyHpRatios,
   });
-  propsRef.current = { playerSlimes, enemies, playerHpRatios, enemyHpRatios };
+  propsRef.current = { playerSlimes, enemies };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -267,22 +444,18 @@ export function ArenaBattleCanvas({
     if (energyRightRef.current.length === 0) seedOrbs(energyRightRef.current, midX + 8, width - 8);
 
     const { playerSlimes: ps, enemies: en } = propsRef.current;
-    for (const s of ps) {
+    ps.forEach((s, i) => {
       if (!slimesRef.current[s.id]) {
-        slimesRef.current[s.id] = {
-          x: 12 + Math.random() * (midX - 40),
-          y: 20 + Math.random() * (height - 40),
-        };
+        const a = arenaVerticalSideAnchor(width, height, i, ps.length, 'left');
+        slimesRef.current[s.id] = { x: a.x, y: a.y };
       }
-    }
-    for (const e of en) {
+    });
+    en.forEach((e, i) => {
       if (!slimesRef.current[e.id]) {
-        slimesRef.current[e.id] = {
-          x: midX + 12 + Math.random() * (width / 2 - 36),
-          y: 20 + Math.random() * (height - 40),
-        };
+        const a = arenaVerticalSideAnchor(width, height, i, en.length, 'right');
+        slimesRef.current[e.id] = { x: a.x, y: a.y };
       }
-    }
+    });
   };
 
   useGameLoop((deltaTime) => {
@@ -311,13 +484,19 @@ export function ArenaBattleCanvas({
       }
     });
 
+    const pl = propsRef.current.playerSlimes;
+    const en = propsRef.current.enemies;
+    const enemyTeam = en.map(enemyAsSlime);
+
+    if (!paused) {
     const updateSlime = (
       slime: Slime,
       index: number,
       team: Slime[],
       orbList: EnergyOrb[],
       anchor: { x: number; y: number },
-      side: 'left' | 'right'
+      side: 'left' | 'right',
+      opponentPos: { x: number; y: number } | null
     ) => {
       if (!slimesRef.current[slime.id]) {
         slimesRef.current[slime.id] = { x: anchor.x, y: anchor.y };
@@ -328,10 +507,10 @@ export function ArenaBattleCanvas({
       const finalSlimeSpeed =
         BASE_SLIME_SPEED * (1 + slime.stats.agility / 20) * (1 + selfSpeedBuff) * (1 + globalSlimeSpeedBuff);
 
-      let sMoveDir = { x: 0, y: 0 };
       const inSide = (o: EnergyOrb) => (side === 'left' ? o.x < midX - 4 : o.x > midX + 4);
       const pool = orbList.filter(inSide);
 
+      let orbDir = { x: 0, y: 0 };
       if (pool.length > 0) {
         let target = pool.find((o) => o.id === sPos.targetId);
         if (!target) {
@@ -349,21 +528,65 @@ export function ArenaBattleCanvas({
         const dy = target.y - sPos.y;
         const dist = Math.hypot(dx, dy);
         if (dist > 2) {
-          sMoveDir = { x: dx / dist, y: dy / dist };
+          orbDir = { x: dx / dist, y: dy / dist };
         }
       } else {
         const dx = anchor.x - sPos.x;
         const dy = anchor.y - sPos.y;
         const dist = Math.hypot(dx, dy);
         if (dist > 40) {
-          sMoveDir = { x: dx / dist, y: dy / dist };
+          orbDir = { x: dx / dist, y: dy / dist };
         }
       }
 
+      let chaseDir = { x: 0, y: 0 };
+      if (opponentPos) {
+        const dx = opponentPos.x - sPos.x;
+        const dy = opponentPos.y - sPos.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 2) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          if (dist > ARENA_MELEE_MAX_ATTACK_DIST_PX) {
+            chaseDir = { x: nx, y: ny };
+          } else if (dist < ARENA_MELEE_MIN_SEPARATION_PX + 6) {
+            chaseDir = { x: -nx * 0.32, y: -ny * 0.32 };
+          } else {
+            const px = -ny;
+            const py = nx;
+            chaseDir = { x: px * 0.38, y: py * 0.38 };
+          }
+        }
+      }
+
+      const orbLen = Math.hypot(orbDir.x, orbDir.y);
+      let sMoveDir = { x: 0, y: 0 };
+      if (opponentPos && (chaseDir.x !== 0 || chaseDir.y !== 0)) {
+        const cw = 0.58;
+        const ow = 0.42;
+        if (orbLen > 0.01) {
+          sMoveDir = {
+            x: chaseDir.x * cw + orbDir.x * ow,
+            y: chaseDir.y * cw + orbDir.y * ow,
+          };
+        } else {
+          sMoveDir = chaseDir;
+        }
+        const m = Math.hypot(sMoveDir.x, sMoveDir.y);
+        if (m > 0.01) {
+          sMoveDir = { x: sMoveDir.x / m, y: sMoveDir.y / m };
+        }
+      } else if (orbLen > 0.01) {
+        sMoveDir = orbDir;
+      } else {
+        sMoveDir = chaseDir;
+      }
+
       const time = Date.now() / 1000;
-      const wanderAngle = (time + index * 123.45) * 2;
-      const wanderX = Math.cos(wanderAngle) * 0.4;
-      const wanderY = Math.sin(wanderAngle) * 0.4;
+      const wanderAngle = (time + index * 123.45) * 1.4;
+      const wanderAmp = opponentPos ? 0.1 : 0.18;
+      const wanderX = Math.cos(wanderAngle) * wanderAmp;
+      const wanderY = Math.sin(wanderAngle) * wanderAmp;
       const finalMoveX = sMoveDir.x + wanderX;
       const finalMoveY = sMoveDir.y + wanderY;
       const finalDist = Math.hypot(finalMoveX, finalMoveY);
@@ -396,26 +619,124 @@ export function ArenaBattleCanvas({
         sPos.y += (pDy / pDist) * push;
       }
 
+      /** Let both teams meet in the center for melee (was hard-split at midline). */
       if (side === 'left') {
-        sPos.x = Math.min(sPos.x, midX - 14);
+        sPos.x = Math.min(sPos.x, midX + 44);
       } else {
-        sPos.x = Math.max(sPos.x, midX + 14);
+        sPos.x = Math.max(sPos.x, midX - 44);
       }
       sPos.x = Math.max(10, Math.min(width - 10, sPos.x));
       sPos.y = Math.max(10, Math.min(height - 10, sPos.y));
 
     };
 
-    const pl = propsRef.current.playerSlimes;
-    const en = propsRef.current.enemies;
-    const anchorLeft = { x: width * 0.26, y: height * 0.52 };
-    const anchorRight = { x: width * 0.74, y: height * 0.48 };
-
-    const enemyTeam = en.map(enemyAsSlime);
-    pl.forEach((s, i) => updateSlime(s, i, pl, energyLeftRef.current, anchorLeft, 'left'));
-    enemyTeam.forEach((slime, i) => {
-      updateSlime(slime, i + 10, enemyTeam, energyRightRef.current, anchorRight, 'right');
+    pl.forEach((s, i) => {
+      const foe = en[i];
+      const fp = foe ? slimesRef.current[foe.id] : undefined;
+      const opp = fp ? { x: fp.x, y: fp.y } : null;
+      const anchorLeft = arenaVerticalSideAnchor(width, height, i, pl.length, 'left');
+      updateSlime(s, i, pl, energyLeftRef.current, anchorLeft, 'left', opp);
     });
+    enemyTeam.forEach((slime, i) => {
+      const pal = pl[i];
+      const pp = pal ? slimesRef.current[pal.id] : undefined;
+      const opp = pp ? { x: pp.x, y: pp.y } : null;
+      const anchorRight = arenaVerticalSideAnchor(width, height, i, enemyTeam.length, 'right');
+      updateSlime(slime, i + 10, enemyTeam, energyRightRef.current, anchorRight, 'right', opp);
+    });
+
+    const separateOpposing = () => {
+      for (let a = 0; a < pl.length; a++) {
+        for (let b = 0; b < en.length; b++) {
+          const pa = slimesRef.current[pl[a]!.id];
+          const pb = slimesRef.current[en[b]!.id];
+          if (!pa || !pb) continue;
+          const dx = pb.x - pa.x;
+          const dy = pb.y - pa.y;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          if (dist >= ARENA_MELEE_MIN_SEPARATION_PX) continue;
+          const push = ((ARENA_MELEE_MIN_SEPARATION_PX - dist) / 2) * 0.75;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          pa.x -= nx * push;
+          pa.y -= ny * push;
+          pb.x += nx * push;
+          pb.y += ny * push;
+        }
+      }
+    };
+    separateOpposing();
+
+    const clampAll = () => {
+      for (const s of pl) {
+        const p = slimesRef.current[s.id];
+        if (!p) continue;
+        p.x = Math.max(10, Math.min(width - 10, p.x));
+        p.y = Math.max(10, Math.min(height - 10, p.y));
+      }
+      for (const e of en) {
+        const p = slimesRef.current[e.id];
+        if (!p) continue;
+        p.x = Math.max(10, Math.min(width - 10, p.x));
+        p.y = Math.max(10, Math.min(height - 10, p.y));
+      }
+    };
+    clampAll();
+
+    const meleeSwingReady = (id: string) => {
+      const a = meleeAttackAnimRef.current[id];
+      if (!a) return true;
+      return timeNow - a.startMs >= ARENA_MELEE_ATTACK_ANIM_MS;
+    };
+
+    for (let i = 0; i < Math.min(pl.length, en.length); i++) {
+      if (pairNextAttackRef.current[i] == null) {
+        pairNextAttackRef.current[i] =
+          timeNow + 240 + i * Math.floor(ARENA_MELEE_PAIR_ATTACK_INTERVAL_MS / 5);
+      }
+    }
+
+    for (let i = 0; i < Math.min(pl.length, en.length); i++) {
+      const pSlime = pl[i]!;
+      const eDisp = en[i]!;
+      const pPos = slimesRef.current[pSlime.id];
+      const ePos = slimesRef.current[eDisp.id];
+      if (!pPos || !ePos) continue;
+      const dist = Math.hypot(pPos.x - ePos.x, pPos.y - ePos.y);
+      if (dist < ARENA_MELEE_MIN_ATTACK_DIST_PX || dist > ARENA_MELEE_MAX_ATTACK_DIST_PX) continue;
+      const nextT = pairNextAttackRef.current[i];
+      if (nextT == null || timeNow < nextT) continue;
+
+      const eSlime = enemyTeam[i]!;
+      const pStr = Math.max(2, pSlime.stats.strength);
+      const eStr = Math.max(2, eSlime.stats.strength);
+      const flashUntil = timeNow + 160;
+      const phase = pairAttackPhaseRef.current[i] ?? 0;
+
+      if (phase === 0) {
+        if (!meleeSwingReady(pSlime.id)) continue;
+        const dmg = ARENA_MELEE_HIT_DAMAGE * (pStr / 10);
+        hpEnemyRef.current[i] = Math.max(0, (hpEnemyRef.current[i] ?? 1) - dmg);
+        hitFlashUntilRef.current[eDisp.id] = flashUntil;
+        const mx = ePos.x - pPos.x;
+        const my = ePos.y - pPos.y;
+        const ml = Math.hypot(mx, my) || 1;
+        meleeAttackAnimRef.current[pSlime.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
+        pairAttackPhaseRef.current[i] = 1;
+      } else {
+        if (!meleeSwingReady(eDisp.id)) continue;
+        const dmg = ARENA_MELEE_HIT_DAMAGE * (eStr / 12);
+        hpPlayerRef.current[i] = Math.max(0, (hpPlayerRef.current[i] ?? 1) - dmg);
+        hitFlashUntilRef.current[pSlime.id] = flashUntil;
+        const mx = pPos.x - ePos.x;
+        const my = pPos.y - ePos.y;
+        const ml = Math.hypot(mx, my) || 1;
+        meleeAttackAnimRef.current[eDisp.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
+        pairAttackPhaseRef.current[i] = 0;
+      }
+      pairNextAttackRef.current[i] =
+        timeNow + ARENA_MELEE_ATTACK_ANIM_MS + ARENA_MELEE_POST_SWING_MS;
+    }
 
     const slimeRadius = BASE_SLIME_COLLECT_RADIUS * (1 + globalRadiusBuff);
 
@@ -472,6 +793,8 @@ export function ArenaBattleCanvas({
       spawn(energyRightRef.current, midX + 8, width - 8);
     }
 
+    } // end !paused
+
     // —— Draw ——
     ctx.clearRect(0, 0, width, height);
     const g = ctx.createLinearGradient(0, 0, width, height);
@@ -522,6 +845,8 @@ export function ArenaBattleCanvas({
     energyRightRef.current.forEach(drawEnergyOrb);
 
     const drawSlimeBody = (slime: Slime, pos: SlimePos, hpRatio: number, side: 'player' | 'enemy') => {
+      const meleeHitFlash =
+        (hitFlashUntilRef.current[slime.id] ?? 0) > timeNow;
       const time = timeNow;
       const isBursting = isTraitCycleActive && slime.trait !== 'None';
       const isSpeedType = ['Swift', 'Fast', 'Sonic'].includes(slime.trait);
@@ -541,8 +866,29 @@ export function ArenaBattleCanvas({
         ? Math.max(0, 1 - (timeNow - tProc) / ARENA_ABILITY_PROC_MS)
         : 0;
 
+      let lungeX = 0;
+      let lungeY = 0;
+      let meleeProg: number | null = null;
+      let meleeTx = 0;
+      let meleeTy = 0;
+      const atkAnim = meleeAttackAnimRef.current[slime.id];
+      if (atkAnim) {
+        const age = timeNow - atkAnim.startMs;
+        if (age >= ARENA_MELEE_ATTACK_ANIM_MS) {
+          delete meleeAttackAnimRef.current[slime.id];
+        } else {
+          meleeProg = age / ARENA_MELEE_ATTACK_ANIM_MS;
+          meleeTx = atkAnim.tx;
+          meleeTy = atkAnim.ty;
+          const ease = Math.sin(meleeProg * Math.PI);
+          lungeX = atkAnim.tx * ease * 6;
+          lungeY = atkAnim.ty * ease * 6;
+        }
+      }
+
       ctx.save();
       ctx.translate(pos.x, pos.y + jumpY);
+      ctx.translate(lungeX, lungeY);
 
       ctx.save();
       ctx.translate(0, -jumpY);
@@ -601,6 +947,19 @@ export function ArenaBattleCanvas({
       ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
       ctx.fill();
 
+      if (meleeProg !== null) {
+        drawArenaMeleeSpecialAttackVfx(ctx, slime.arenaAbility, meleeProg, meleeTx, meleeTy, drawRadius);
+      }
+
+      if (meleeHitFlash) {
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, (drawRadius * 1.08) / squashStretch, drawRadius * 1.08 * squashStretch, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
       ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.beginPath();
       ctx.ellipse(-drawRadius * 0.3, -drawRadius * 0.3, drawRadius * 0.2, drawRadius * 0.4, Math.PI / 4, 0, Math.PI * 2);
@@ -617,37 +976,9 @@ export function ArenaBattleCanvas({
       ctx.arc(3.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
       ctx.fill();
 
-      const hasTrait = slime.trait !== 'None';
       const hasArena = slime.arenaAbility !== 'None';
-      const traitY = -drawRadius - 8;
-      const energyY = hasTrait ? -drawRadius - 17 : -drawRadius - 8;
-      const hpY =
-        hasTrait && hasArena ? -drawRadius - 26 : hasTrait || hasArena ? -drawRadius - 17 : -drawRadius - 8;
-
-      if (hasTrait) {
-        const barWidth = 24;
-        const barHeight = 3;
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath();
-        ctx.roundRect(-barWidth / 2, traitY, barWidth, barHeight, 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-        const t = time % cycleTime;
-        let progress = 0;
-        let color = '#f97316';
-        if (isTraitCycleActive) {
-          progress = t / activeDuration;
-        } else {
-          progress = (t - activeDuration) / (cycleTime - activeDuration);
-          color = '#FFFFFF';
-        }
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.roundRect(-barWidth / 2, traitY, barWidth * Math.max(0, Math.min(1, progress)), barHeight, 2);
-        ctx.fill();
-      }
+      const energyY = -drawRadius - 8;
+      const hpY = hasArena ? -drawRadius - 17 : -drawRadius - 8;
 
       if (hasArena) {
         const e = energyLevelRef.current[slime.id] ?? 0;
@@ -659,20 +990,22 @@ export function ArenaBattleCanvas({
       ctx.restore();
     };
 
-    const { playerHpRatios: ph, enemyHpRatios: eh } = propsRef.current;
     pl.forEach((s, i) => {
       const pos = slimesRef.current[s.id];
-      if (pos) drawSlimeBody(s, pos, ph[i] ?? 1, 'player');
+      if (pos) drawSlimeBody(s, pos, hpPlayerRef.current[i] ?? 1, 'player');
     });
     en.forEach((e, i) => {
       const pos = slimesRef.current[e.id];
-      if (pos) drawSlimeBody(enemyAsSlime(e), pos, eh[i] ?? 1, 'enemy');
+      if (pos) drawSlimeBody(enemyAsSlime(e), pos, hpEnemyRef.current[i] ?? 1, 'enemy');
     });
   });
 
   return (
-    <div ref={containerRef} className="relative min-h-[200px] w-full flex-1 overflow-hidden rounded-xl border border-violet-500/20 bg-slate-950">
-      <canvas ref={canvasRef} className="block h-full w-full touch-none" style={{ minHeight: 200 }} />
+    <div
+      ref={containerRef}
+      className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden rounded-xl border border-violet-500/20 bg-slate-950"
+    >
+      <canvas ref={canvasRef} className="block h-full min-h-[200px] w-full touch-none" />
     </div>
   );
 }

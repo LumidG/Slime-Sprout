@@ -1,33 +1,35 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, Sword, Wind, Swords, HelpCircle, Coins, Timer, Zap } from 'lucide-react';
+import { Heart, HeartCrack, Sword, Wind, Swords, Coins, Zap } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
 import {
-  ARENA_RESERVES,
-  ARENA_STARTERS,
+  ARENA_TEAM_SIZE,
   ARENA_ABILITY_META,
+  ARENA_BATTLE_DURATION_MS,
+  ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS,
   generateArenaEncounter,
   generateArenaEnemyTeam,
   getArenaStatLabel,
   resolveArenaBattle,
-  isSlimeOnCooldown,
   isArenaAbilityOnCooldown,
   type ArenaEncounter,
 } from '../constants';
 import { ArenaBattleCanvas } from './ArenaBattleCanvas';
 
-const BATTLE_MS = 2800;
-
 type Props = {
   slimes: Slime[];
-  slimeCooldownUntil: Record<string, number>;
+  /** Lifetime arena wins — first encounters scale easier until the player has a few victories. */
+  arenaWins: number;
   slimeArenaAbilityCooldownUntil: Record<string, number>;
   now: number;
+  /** Fires when the timed battle canvas starts / ends (not lineup / results screens). */
+  onBattleActiveChange?: (active: boolean) => void;
+  /** Ensures the shell shows the Arena tab after a result (claim rewards, try again, or quit). */
+  onReturnToArenaTab?: () => void;
   onBattleEnd: (payload: {
     won: boolean;
     encounter: ArenaEncounter;
-    starterIds: [string, string, string];
-    reserveIds: [string | undefined, string | undefined];
+    teamIds: [string, string, string, string];
     arenaAbilityUserIds: string[];
   }) => void;
 };
@@ -89,12 +91,24 @@ function AbilityCooldownRow({
   );
 }
 
-export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityCooldownUntil, now, onBattleEnd }: Props) {
-  const [encounterSeed, setEncounterSeed] = useState(() => Math.floor(Math.random() * 1e9));
-  const encounter = useMemo(() => generateArenaEncounter(encounterSeed), [encounterSeed]);
+const emptyTeam = (): (string | null)[] => Array.from({ length: ARENA_TEAM_SIZE }, () => null);
 
-  const [starters, setStarters] = useState<(string | null)[]>(() => [null, null, null]);
-  const [reserves, setReserves] = useState<(string | null)[]>(() => [null, null]);
+export function SlimeArenaPanel({
+  slimes,
+  arenaWins,
+  slimeArenaAbilityCooldownUntil,
+  now,
+  onBattleActiveChange,
+  onReturnToArenaTab,
+  onBattleEnd,
+}: Props) {
+  const [encounterSeed, setEncounterSeed] = useState(() => Math.floor(Math.random() * 1e9));
+  const encounter = useMemo(
+    () => generateArenaEncounter(encounterSeed, arenaWins),
+    [encounterSeed, arenaWins]
+  );
+
+  const [team, setTeam] = useState<(string | null)[]>(() => emptyTeam());
 
   const [result, setResult] = useState<{ won: boolean; encounter: ArenaEncounter } | null>(null);
 
@@ -102,8 +116,7 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
     encounter: ArenaEncounter;
     playerSlimes: Slime[];
     enemies: ReturnType<typeof generateArenaEnemyTeam>;
-    starterIds: [string, string, string];
-    reserveIds: [string | undefined, string | undefined];
+    teamIds: [string, string, string, string];
   };
 
   type ResolveContext = {
@@ -111,66 +124,83 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
     s0: Slime;
     s1: Slime;
     s2: Slime;
-    r0: Slime | undefined;
-    r1: Slime | undefined;
-    starterIds: [string, string, string];
-    reserveIds: [string | undefined, string | undefined];
+    s3: Slime;
+    teamIds: [string, string, string, string];
+    /** Lifetime wins before this fight — early fights get a small power bonus in {@link resolveArenaBattle}. */
+    arenaWinsBeforeBattle: number;
   };
 
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
+  /** 3 → 2 → 1 during pre-battle countdown; 0 = fight running; null = not in arena fight. */
+  const [preBattleCountdown, setPreBattleCountdown] = useState<number | null>(null);
   const [liveAbilityFired, setLiveAbilityFired] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    onBattleActiveChange?.(battleSession != null);
+  }, [battleSession, onBattleActiveChange]);
+
+  useEffect(() => {
+    return () => {
+      onBattleActiveChange?.(false);
+    };
+  }, [onBattleActiveChange]);
+
+  useEffect(() => {
+    if (!battleSession) setPreBattleCountdown(null);
+  }, [battleSession]);
+
+  useEffect(() => {
+    if (preBattleCountdown == null || preBattleCountdown <= 0) return;
+    const t = window.setTimeout(() => {
+      setPreBattleCountdown((c) => (c != null && c > 0 ? c - 1 : c));
+    }, ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS);
+    return () => window.clearTimeout(t);
+  }, [preBattleCountdown]);
   const resolveContextRef = useRef<ResolveContext | null>(null);
   const playerAbilityFiredRef = useRef<Record<string, boolean>>({});
 
   const lineupIds = useMemo(
-    () => [...starters, ...reserves].filter((x): x is string => x != null),
-    [starters, reserves]
+    () => team.filter((x): x is string => x != null),
+    [team]
   );
 
   const toggleSlimeInLineup = useCallback(
     (id: string) => {
       if (lineupIds.includes(id)) {
-        setStarters((s) => s.map((x) => (x === id ? null : x)));
-        setReserves((r) => r.map((x) => (x === id ? null : x)));
+        setTeam((t) => t.map((x) => (x === id ? null : x)));
         return;
       }
-      const idx = starters.findIndex((x) => x == null);
+      const idx = team.findIndex((x) => x == null);
       if (idx >= 0) {
-        setStarters((s) => {
-          const n = [...s];
+        setTeam((t) => {
+          const n = [...t];
           n[idx] = id;
-          return n;
-        });
-        return;
-      }
-      const ridx = reserves.findIndex((x) => x == null);
-      if (ridx >= 0) {
-        setReserves((r) => {
-          const n = [...r];
-          n[ridx] = id;
           return n;
         });
       }
     },
-    [lineupIds, starters, reserves]
+    [lineupIds, team]
   );
 
   const clearLineup = useCallback(() => {
-    setStarters([null, null, null]);
-    setReserves([null, null]);
+    setTeam(emptyTeam());
   }, []);
 
   const canFight =
-    starters[0] != null && starters[1] != null && starters[2] != null && slimes.length >= 3;
+    team[0] != null &&
+    team[1] != null &&
+    team[2] != null &&
+    team[3] != null &&
+    slimes.length >= ARENA_TEAM_SIZE;
 
   useEffect(() => {
-    if (!battleSession) return;
+    if (!battleSession || preBattleCountdown !== 0) return;
     let rafId = 0;
     let cancelled = false;
     const start = performance.now();
     const step = (t: number) => {
       if (cancelled) return;
-      const p = Math.min(1, (t - start) / BATTLE_MS);
+      const p = Math.min(1, (t - start) / ARENA_BATTLE_DURATION_MS);
       if (p < 1) {
         rafId = requestAnimationFrame(step);
       } else {
@@ -181,14 +211,18 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
         if (!ctx) return;
         const abilityUsed: Record<string, boolean> = { ...playerAbilityFiredRef.current };
         playerAbilityFiredRef.current = {};
-        const { won } = resolveArenaBattle(ctx.encounter, [ctx.s0, ctx.s1, ctx.s2], [ctx.r0, ctx.r1], abilityUsed);
+        const { won } = resolveArenaBattle(
+          ctx.encounter,
+          [ctx.s0, ctx.s1, ctx.s2, ctx.s3],
+          abilityUsed,
+          ctx.arenaWinsBeforeBattle
+        );
         const arenaAbilityUserIds = Object.keys(abilityUsed).filter((id) => abilityUsed[id]);
         setResult({ won, encounter: ctx.encounter });
         onBattleEnd({
           won,
           encounter: ctx.encounter,
-          starterIds: ctx.starterIds,
-          reserveIds: ctx.reserveIds,
+          teamIds: ctx.teamIds,
           arenaAbilityUserIds,
         });
       }
@@ -198,20 +232,19 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
       cancelled = true;
       cancelAnimationFrame(rafId);
     };
-  }, [battleSession, onBattleEnd]);
+  }, [battleSession, preBattleCountdown, onBattleEnd]);
 
   const runBattle = () => {
-    if (!canFight || !starters[0] || !starters[1] || !starters[2]) return;
-    const s0 = slimes.find((x) => x.id === starters[0]);
-    const s1 = slimes.find((x) => x.id === starters[1]);
-    const s2 = slimes.find((x) => x.id === starters[2]);
-    if (!s0 || !s1 || !s2) return;
-    const r0 = reserves[0] ? slimes.find((x) => x.id === reserves[0]) : undefined;
-    const r1 = reserves[1] ? slimes.find((x) => x.id === reserves[1]) : undefined;
+    if (!canFight || !team[0] || !team[1] || !team[2] || !team[3]) return;
+    const s0 = slimes.find((x) => x.id === team[0]);
+    const s1 = slimes.find((x) => x.id === team[1]);
+    const s2 = slimes.find((x) => x.id === team[2]);
+    const s3 = slimes.find((x) => x.id === team[3]);
+    if (!s0 || !s1 || !s2 || !s3) return;
 
-    const consider = [s0, s1, s2, r0, r1].filter((x): x is Slime => x != null);
-    const playerSlimes = consider;
+    const playerSlimes = [s0, s1, s2, s3];
     const enemies = generateArenaEnemyTeam(encounter);
+    const teamIds: [string, string, string, string] = [team[0], team[1], team[2], team[3]];
 
     playerAbilityFiredRef.current = {};
     setLiveAbilityFired({});
@@ -220,105 +253,76 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
       s0,
       s1,
       s2,
-      r0,
-      r1,
-      starterIds: [starters[0], starters[1], starters[2]],
-      reserveIds: [reserves[0] ?? undefined, reserves[1] ?? undefined],
+      s3,
+      teamIds,
+      arenaWinsBeforeBattle: arenaWins,
     };
 
     setBattleSession({
       encounter,
       playerSlimes,
       enemies,
-      starterIds: [starters[0], starters[1], starters[2]],
-      reserveIds: [reserves[0] ?? undefined, reserves[1] ?? undefined],
+      teamIds,
     });
+    setPreBattleCountdown(3);
   };
 
-  const dismissResult = () => {
+  const closeVictory = useCallback(() => {
     setResult(null);
-    if (result?.won) {
-      setEncounterSeed((s) => s + 1);
-    }
+    setEncounterSeed((s) => s + 1);
     clearLineup();
-  };
+    onReturnToArenaTab?.();
+  }, [clearLineup, onReturnToArenaTab]);
 
-  const hpPlayerDisplay = battleSession ? battleSession.playerSlimes.map(() => 1) : [];
-  const hpEnemyDisplay = battleSession ? battleSession.enemies.map(() => 1) : [];
+  const closeDefeatTryDifferentTeam = useCallback(() => {
+    setResult(null);
+    clearLineup();
+    onReturnToArenaTab?.();
+  }, [clearLineup, onReturnToArenaTab]);
+
+  const closeDefeatQuit = useCallback(() => {
+    setResult(null);
+    clearLineup();
+    onReturnToArenaTab?.();
+  }, [clearLineup, onReturnToArenaTab]);
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div className="shrink-0 space-y-3 border-b border-violet-200/80 bg-gradient-to-b from-violet-50 via-white to-orange-50/40 px-4 pb-4 pt-5">
-        <div className="flex flex-col items-center gap-1">
-          <Swords className="h-9 w-9 text-violet-600 drop-shadow-sm" aria-hidden />
-          <h2 className="text-lg font-black uppercase tracking-widest text-emerald-950">Slime Arena</h2>
-          <p className="text-center text-[10px] font-semibold leading-snug text-emerald-800/75">
-            Mystery opponents — pick a squad. This fight favors certain stats.
-          </p>
+      <div className="shrink-0 space-y-2 border-b border-violet-200/80 bg-gradient-to-b from-violet-50 via-white to-orange-50/40 px-3 pb-2 pt-3">
+        <div className="flex flex-col items-center gap-0.5">
+          <Swords className="h-7 w-7 text-violet-600 drop-shadow-sm" aria-hidden />
+          <h2 className="text-base font-black uppercase tracking-widest text-emerald-950">Slime Arena</h2>
         </div>
 
-        <div className="rounded-2xl border border-violet-200/90 bg-white/90 p-3 shadow-sm">
-          <p className="mb-2 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
-            <HelpCircle className="h-3.5 w-3.5" aria-hidden />
-            Recommended focus
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full bg-gradient-to-r from-orange-100 to-amber-100 px-3 py-1.5 text-[10px] font-black text-orange-900 ring-1 ring-orange-200/80">
+        <div className="rounded-xl border border-violet-200/90 bg-white/90 p-2 shadow-sm">
+          <motion.p
+            animate={{ opacity: [0.45, 1, 0.45] }}
+            transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+            className="mb-1 text-center text-[9px] font-bold uppercase tracking-wider text-emerald-600/90"
+          >
+            recommended focus
+          </motion.p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            <span className="rounded-full bg-gradient-to-r from-orange-100 to-amber-100 px-2 py-1 text-[9px] font-black text-orange-900 ring-1 ring-orange-200/80">
               Best — {getArenaStatLabel(encounter.primaryStat)}
             </span>
-            <span className="rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5 text-[10px] font-black text-emerald-900 ring-1 ring-emerald-200/70">
+            <span className="rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 px-2 py-1 text-[9px] font-black text-emerald-900 ring-1 ring-emerald-200/70">
               Next — {getArenaStatLabel(encounter.secondaryStat)}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-violet-200/80 bg-violet-50/40 py-4">
-          {[0, 1, 2].map((i) => (
-            <div key={`myst-${i}`} className="flex flex-col items-center gap-1">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-300 to-zinc-500 shadow-inner ring-2 ring-white/50">
-                <Swords className="h-7 w-7 text-white/90" aria-hidden />
-              </div>
-              <span className="text-[8px] font-black uppercase tracking-tight text-zinc-500">Rival {i + 1}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
-        <div className="mb-3 space-y-2">
-          <p className="text-[9px] font-black uppercase tracking-wider text-emerald-800">Starters ({ARENA_STARTERS})</p>
-          <div className="flex justify-center gap-2">
-            {starters.map((id, i) => (
+        <div className="space-y-1.5 border-t border-violet-100/80 pt-2">
+          <p className="text-[8px] font-black uppercase tracking-wider text-emerald-800">
+            Your team ({ARENA_TEAM_SIZE})
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {team.map((id, i) => (
               <button
-                key={`st-${i}`}
+                key={`tm-${i}`}
                 type="button"
                 onClick={() => id && toggleSlimeInLineup(id)}
-                className="flex h-16 w-[4.5rem] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-white/90 shadow-sm transition-all"
-              >
-                {id ? (
-                  <>
-                    <div
-                      className="mb-0.5 h-9 w-9 rounded-full shadow-inner ring-2 ring-white"
-                      style={{ backgroundColor: slimes.find((s) => s.id === id)?.color ?? '#ccc' }}
-                    />
-                    <span className="max-w-full truncate px-0.5 text-[7px] font-black text-zinc-700">
-                      {slimes.find((s) => s.id === id)?.name ?? '?'}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[9px] font-black text-violet-300">{i + 1}</span>
-                )}
-              </button>
-            ))}
-          </div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-emerald-800">Reserves ({ARENA_RESERVES}, optional)</p>
-          <div className="flex justify-center gap-2">
-            {reserves.map((id, i) => (
-              <button
-                key={`rs-${i}`}
-                type="button"
-                onClick={() => id && toggleSlimeInLineup(id)}
-                className="flex h-14 w-[4.5rem] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-200/90 bg-amber-50/50 shadow-sm"
+                className="flex h-14 w-[4rem] flex-col items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-white/90 shadow-sm transition-all"
               >
                 {id ? (
                   <>
@@ -331,38 +335,35 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
                     </span>
                   </>
                 ) : (
-                  <span className="text-[8px] font-bold text-amber-300/90">Empty</span>
+                  <span className="text-[9px] font-black text-violet-300">{i + 1}</span>
                 )}
               </button>
             ))}
           </div>
         </div>
+      </div>
 
-        <p className="mb-2 text-[9px] font-black uppercase tracking-wider text-emerald-800">Your slimes</p>
-        <div className="grid grid-cols-3 gap-2 pb-24">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-2">
+        <p className="mb-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-800">Your slimes</p>
+        <p className="mb-1.5 text-[8px] font-semibold text-emerald-800/70">
+          Tap to fill your team in order (slot 1 → {ARENA_TEAM_SIZE}).
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
           {slimes.map((slime) => {
             const inLineup = lineupIds.includes(slime.id);
-            const cd = isSlimeOnCooldown(slimeCooldownUntil, slime.id, now);
-            const cdLeft = cd ? Math.max(0, (slimeCooldownUntil[slime.id] ?? 0) - now) : 0;
             return (
               <button
                 key={slime.id}
                 type="button"
                 onClick={() => toggleSlimeInLineup(slime.id)}
-                className={`relative flex flex-col items-center gap-1 overflow-hidden rounded-2xl border-2 p-2 py-2.5 transition-all ${
+                className={`relative flex flex-col items-center gap-0.5 overflow-hidden rounded-xl border-2 p-1.5 py-2 transition-all ${
                   inLineup
                     ? 'border-violet-400 bg-gradient-to-b from-violet-100 to-white shadow-md ring-2 ring-violet-300/40'
                     : 'border-emerald-50 bg-white shadow-sm hover:border-violet-200'
                 }`}
               >
-                {cd && (
-                  <div className="absolute right-0.5 top-0.5 flex items-center gap-0.5 rounded-full bg-zinc-800/90 px-1 py-0.5 text-[7px] font-black text-amber-100">
-                    <Timer className="h-2.5 w-2.5" aria-hidden />
-                    {formatCooldown(cdLeft)}
-                  </div>
-                )}
                 <div
-                  className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-inner"
+                  className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-inner"
                   style={{ backgroundColor: slime.color }}
                 >
                   <div className="flex gap-1">
@@ -390,30 +391,24 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
           })}
         </div>
 
-        {slimes.length < 3 && (
+        {slimes.length < ARENA_TEAM_SIZE && (
           <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/50 px-3 py-8 text-center">
-            <p className="text-[10px] font-bold text-violet-700">Need at least 3 slimes to enter the arena.</p>
+            <p className="text-[10px] font-bold text-violet-700">
+              Need at least {ARENA_TEAM_SIZE} slimes to enter the arena.
+            </p>
           </div>
         )}
       </div>
 
-      <div className="shrink-0 border-t border-violet-100/90 bg-gradient-to-r from-white via-violet-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
+      <div className="shrink-0 border-t border-violet-100/90 bg-gradient-to-r from-white via-violet-50/30 to-orange-50/40 px-3 py-2 backdrop-blur-md">
+        <div className="mx-auto flex justify-center">
           <button
             type="button"
             onClick={runBattle}
             disabled={!canFight || !!battleSession}
-            className="ui-afford-disabled w-full rounded-2xl border-2 border-violet-500 bg-gradient-to-br from-violet-500 to-purple-700 py-3 text-sm font-black text-white shadow-lg shadow-violet-900/20 transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-600 disabled:shadow-none"
+            className="ui-afford-disabled rounded-xl border-2 border-violet-500 bg-gradient-to-br from-violet-500 to-purple-700 px-5 py-2 text-xs font-black text-white shadow-md shadow-violet-900/20 transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-600 disabled:shadow-none"
           >
             Start battle
-          </button>
-          <button
-            type="button"
-            onClick={clearLineup}
-            disabled={!!battleSession}
-            className="text-center text-[10px] font-bold text-violet-600/80 hover:text-violet-800 disabled:opacity-40"
-          >
-            Clear lineup
           </button>
         </div>
       </div>
@@ -430,18 +425,35 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
             <div className="shrink-0 border-b border-violet-500/30 bg-black/20 px-3 py-2 text-center">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-200/90">Arena</p>
               <p className="text-[11px] font-bold text-violet-100/80">
-                Collect energy orbs to fill each slime&apos;s arena bar — when it&apos;s full, they unleash their ability.
+                Slimes brawl in the center and chip each other down — grab energy orbs on your side to charge arena abilities.
               </p>
             </div>
-            <ArenaBattleCanvas
-              key={`${battleSession.starterIds.join('-')}-${battleSession.encounter.seed}`}
-              playerSlimes={battleSession.playerSlimes}
-              enemies={battleSession.enemies}
-              playerHpRatios={hpPlayerDisplay}
-              enemyHpRatios={hpEnemyDisplay}
-              playerAbilityFiredRef={playerAbilityFiredRef}
-              onAbilityFired={(id) => setLiveAbilityFired((p) => ({ ...p, [id]: true }))}
-            />
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <AnimatePresence>
+                {preBattleCountdown != null && preBattleCountdown > 0 && (
+                  <motion.div
+                    key={preBattleCountdown}
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 1.2, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-slate-950/35"
+                  >
+                    <span className="select-none text-7xl font-black tabular-nums text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)]">
+                      {preBattleCountdown}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <ArenaBattleCanvas
+                key={`${battleSession.teamIds.join('-')}-${battleSession.encounter.seed}`}
+                playerSlimes={battleSession.playerSlimes}
+                enemies={battleSession.enemies}
+                playerAbilityFiredRef={playerAbilityFiredRef}
+                onAbilityFired={(id) => setLiveAbilityFired((p) => ({ ...p, [id]: true }))}
+                paused={preBattleCountdown != null && preBattleCountdown > 0}
+              />
+            </div>
             <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 py-2">
               <p className="mb-1.5 text-center text-[8px] font-black uppercase tracking-wider text-violet-300/90">
                 Arena skills (energy bar → Go! → meta cooldown after battle)
@@ -499,7 +511,7 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 z-[120] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm"
-            onClick={dismissResult}
+            onClick={result.won ? closeVictory : closeDefeatTryDifferentTeam}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
@@ -529,24 +541,41 @@ export function SlimeArenaPanel({ slimes, slimeCooldownUntil, slimeArenaAbilityC
                 <>
                   <div className="mb-3 flex justify-center">
                     <div className="rounded-full bg-zinc-200 p-4 ring-2 ring-zinc-400/50">
-                      <Timer className="h-10 w-10 text-zinc-700" aria-hidden />
+                      <HeartCrack className="h-10 w-10 text-zinc-700" aria-hidden />
                     </div>
                   </div>
                   <h3 className="mb-1 text-center text-xl font-black text-zinc-800">Defeat</h3>
                   <p className="mb-4 text-center text-sm font-semibold text-zinc-600">
-                    Everyone in this lineup needs a breather —{' '}
-                    <span className="font-black text-orange-700">5 minutes</span> before their bonuses work
-                    again on the coin field. You can unequip them and equip other slimes.
+                    Pick another team and try again, or leave the arena.
                   </p>
                 </>
               )}
-              <button
-                type="button"
-                onClick={dismissResult}
-                className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-sm font-black text-white shadow-lg"
-              >
-                OK
-              </button>
+              {result.won ? (
+                <button
+                  type="button"
+                  onClick={closeVictory}
+                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-sm font-black text-white shadow-lg"
+                >
+                  Claim rewards
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={closeDefeatTryDifferentTeam}
+                    className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-sm font-black text-white shadow-lg"
+                  >
+                    Try a different team
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDefeatQuit}
+                    className="w-full rounded-2xl border-2 border-zinc-300 bg-white/90 py-3 text-sm font-black text-zinc-700 shadow-sm"
+                  >
+                    Quit
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
