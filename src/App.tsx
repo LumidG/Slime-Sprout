@@ -995,10 +995,10 @@ export default function App() {
   if (isLoading && loadingProgress < 100) {
     return (
       <div className="bg-app-splash flex h-full min-h-[100dvh] w-full flex-col items-center justify-center p-8 select-none">
-        <motion.h1 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="mb-8 bg-gradient-to-br from-emerald-900 to-teal-800 bg-clip-text text-4xl font-bold text-transparent drop-shadow-sm"
+        <motion.h1
+          animate={{ y: [0, -10, 0] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="mb-4 bg-gradient-to-br from-emerald-900 via-teal-800 to-orange-800 bg-clip-text text-center text-5xl font-bold text-transparent"
         >
           Slime School Tycoon
         </motion.h1>
