@@ -16,6 +16,7 @@ import {
   GAME_WORLDS,
   type GameWorldDecoration
 } from '../constants';
+import { drawSlimeSpriteStack, loadSlimeSpriteImageCache } from '../slimeSprites';
 
 interface Coin {
   id: number;
@@ -487,15 +488,32 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const groundTrailRef = useRef<GroundTrailParticle[]>([]);
   const joystickRef = useRef<{
     active: boolean;
+    /** Canvas coords where the finger first went down (floating base). */
+    anchorX: number;
+    anchorY: number;
     curX: number;
     curY: number;
     maxRadius: number;
   }>({
     active: false,
+    anchorX: 0,
+    anchorY: 0,
     curX: 0,
     curY: 0,
     maxRadius: 40,
   });
+  const slimeSpriteCacheRef = useRef<Map<string, HTMLImageElement> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadSlimeSpriteImageCache().then((m) => {
+      if (!cancelled) {
+        slimeSpriteCacheRef.current = m;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Resize handler
   useEffect(() => {
@@ -538,6 +556,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     joystickRef.current = {
       ...joystickRef.current,
       active: true,
+      anchorX: x,
+      anchorY: y,
       curX: x,
       curY: y,
     };
@@ -632,15 +652,14 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     let joystickSpeedMult = 1;
 
     if (joystickRef.current.active) {
-      const baseX = playerRef.current.x;
-      const baseY = playerRef.current.y;
-      const dx = joystickRef.current.curX - baseX;
-      const dy = joystickRef.current.curY - baseY;
+      const { anchorX, anchorY, curX, curY, maxRadius } = joystickRef.current;
+      const dx = curX - anchorX;
+      const dy = curY - anchorY;
       const dist = Math.hypot(dx, dy);
-      
+
       if (dist > 2) {
         moveDir = { x: dx / dist, y: dy / dist };
-        joystickSpeedMult = Math.min(dist / joystickRef.current.maxRadius, 1);
+        joystickSpeedMult = Math.min(dist / maxRadius, 1);
       }
     } else if (automationLevel > 0 && coinsRef.current.length > 0) {
       // Simple AI: move to nearest coin
@@ -1133,30 +1152,37 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         }
       }
 
-      // Slime Body
+      // Slime body + eyes + accessory (stacked PNGs), or vector fallback while assets load
       ctx.globalAlpha = 1.0;
-      ctx.fillStyle = slime.color;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Slime Highlight (Glossy look)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.beginPath();
-      ctx.ellipse(-drawRadius * 0.3, -drawRadius * 0.3, drawRadius * 0.2, drawRadius * 0.4, Math.PI / 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Simple Slime Eyes
-      ctx.fillStyle = 'white';
-      ctx.beginPath();
-      ctx.arc(-3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
-      ctx.arc(3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'black';
-      ctx.beginPath();
-      ctx.arc(-2.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
-      ctx.arc(3.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
-      ctx.fill();
+      const cache = slimeSpriteCacheRef.current;
+      const stackSize = drawRadius * 2.25;
+      let drewSprites = false;
+      if (cache) {
+        ctx.save();
+        ctx.scale(1 / squashStretch, squashStretch);
+        drewSprites = drawSlimeSpriteStack(ctx, cache, slime, stackSize);
+        ctx.restore();
+      }
+      if (!drewSprites) {
+        ctx.fillStyle = slime.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(-drawRadius * 0.3, -drawRadius * 0.3, drawRadius * 0.2, drawRadius * 0.4, Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(-3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
+        ctx.arc(3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(-2.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
+        ctx.arc(3.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Trait Meter Bar
       if (slime.trait !== 'None') {
@@ -1253,28 +1279,33 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       ctx.restore();
     });
 
-    // Draw Joystick Overlay (base locked to player each frame)
+    // Draw Joystick Overlay (anchored to initial touch, thumb follows drag)
     if (joystickRef.current.active) {
-      const baseX = playerRef.current.x;
-      const baseY = playerRef.current.y;
-      const { curX, curY, maxRadius } = joystickRef.current;
-      
-      const dx = curX - baseX;
-      const dy = curY - baseY;
+      const { anchorX, anchorY, curX, curY, maxRadius } = joystickRef.current;
+      const dx = curX - anchorX;
+      const dy = curY - anchorY;
       const dist = Math.hypot(dx, dy);
-      
-      // Limit thumb distance
       const thumbDist = Math.min(dist, maxRadius);
-      const angle = Math.atan2(dy, dx);
-      const thumbX = baseX + Math.cos(angle) * thumbDist;
-      const thumbY = baseY + Math.sin(angle) * thumbDist;
+      const angle = dist < 0.0001 ? 0 : Math.atan2(dy, dx);
+      const thumbX = anchorX + Math.cos(angle) * thumbDist;
+      const thumbY = anchorY + Math.sin(angle) * thumbDist;
+      const thumbR = maxRadius * 0.4;
 
-      // Stick only (no base ring)
+      // Base ring at finger-down point
       ctx.beginPath();
-      ctx.arc(thumbX, thumbY, maxRadius * 0.4, 0, Math.PI * 2);
+      ctx.arc(anchorX, anchorY, maxRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(thumbX, thumbY, thumbR, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.fill();
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     }
   });

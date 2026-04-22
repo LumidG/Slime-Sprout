@@ -6,6 +6,7 @@ import {
   SlimeStats,
   SlimeTrait,
 } from './types';
+import { rollNewSlimeVisuals, visualsFromSlimeId } from './slimeSprites';
 
 /** Google Play listing (same id as `capacitor.config.ts` appId). */
 export const PLAY_STORE_LISTING_URL =
@@ -13,7 +14,7 @@ export const PLAY_STORE_LISTING_URL =
 
 /** Update to your real support address. */
 export const SUPPORT_MAILTO =
-  'mailto:support@nightskygames.com?subject=' + encodeURIComponent('Slime Sprout support');
+  'mailto:support@nightskygames.com?subject=' + encodeURIComponent('Slime School Tycoon support');
 
 export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
@@ -332,6 +333,9 @@ export type ArenaEnemyDisplay = {
   id: string;
   name: string;
   color: string;
+  slimeBody: number;
+  slimeEyes: number;
+  slimeAccessory: number;
   ability: SlimeArenaAbility;
   /** Used for arena canvas movement speed (same formula as main field). */
   agility: number;
@@ -345,10 +349,13 @@ export function generateArenaEnemyTeam(encounter: ArenaEncounter): ArenaEnemyDis
   const abilities: SlimeArenaAbility[] = ['Rally', 'Fortify', 'Smash', 'Rush', 'Harmony'];
   return Array.from({ length: ARENA_TEAM_SIZE }, (_, i) => i).map((i) => {
     const a = r() > 0.15 ? abilities[Math.floor(r() * abilities.length)]! : 'None';
+    const id = `arena-enemy-${encounter.seed}-${i}`;
+    const vis = visualsFromSlimeId(id);
     return {
-      id: `arena-enemy-${encounter.seed}-${i}`,
+      id,
       name: `${first[Math.floor(r() * first.length)]!} ${second[Math.floor(r() * second.length)]!}`,
       color: colors[Math.floor(r() * colors.length)]!,
+      ...vis,
       ability: a,
       agility: 5 + Math.floor(r() * 16),
     };
@@ -592,6 +599,7 @@ export function createNpcMarketSlime(): Slime {
     id: `npc-${Math.random().toString(36).slice(2, 11)}`,
     name: SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)]!,
     color: COLORS[Math.floor(Math.random() * COLORS.length)]!,
+    ...rollNewSlimeVisuals(),
     stats: {
       health: 12 + Math.floor(Math.random() * 18),
       strength: 6 + Math.floor(Math.random() * 14),

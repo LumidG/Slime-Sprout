@@ -1,4 +1,4 @@
-# Slime Sprout
+# Slime School Tycoon
 
 A small idle-style game built with React and Vite. You collect coins on a canvas playfield, spend them on eggs, hatch slimes with traits, upgrade them, and breed new ones. Progress is saved in the browser (`localStorage`). The interface is laid out like a phone app and can be packaged for **Android** with [Capacitor](https://capacitorjs.com/).
 

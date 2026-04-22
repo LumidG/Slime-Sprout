@@ -79,6 +79,8 @@ import {
   rollRandomArenaAbility,
   type ArenaEncounter,
 } from './constants';
+import { SlimeStackSprite } from './components/SlimeStackSprite';
+import { rollNewSlimeVisuals, breedSlimeVisuals, withSlimeVisualDefaults } from './slimeSprites';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
 import { useAppForeground } from './hooks/useAppForeground';
@@ -377,10 +379,12 @@ export default function App() {
           : [];
       }
       if (Array.isArray(parsed.slimes)) {
-        parsed.slimes = parsed.slimes.map((s: Slime) => ({
-          ...s,
-          arenaAbility: s.arenaAbility ?? rollRandomArenaAbility(),
-        }));
+        parsed.slimes = parsed.slimes.map((s: Slime) =>
+          withSlimeVisualDefaults({
+            ...s,
+            arenaAbility: s.arenaAbility ?? rollRandomArenaAbility(),
+          })
+        );
       }
       if (parsed.activeTab === 'market' && parsed.marketSection === 'slimeMarket') {
         parsed.activeTab = 'slimeMarket';
@@ -639,6 +643,7 @@ export default function App() {
             id: Math.random().toString(36).substr(2, 9),
             name: getUniqueName(prev.slimes),
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            ...rollNewSlimeVisuals(),
             stats: {
               health: 10 + Math.floor(Math.random() * 10),
               strength: 5 + Math.floor(Math.random() * 5),
@@ -729,6 +734,7 @@ export default function App() {
       id: Math.random().toString(36).substr(2, 9),
       name: getUniqueName(state.slimes),
       color: s1.color, // Could mix colors
+      ...breedSlimeVisuals(withSlimeVisualDefaults(s1), withSlimeVisualDefaults(s2)),
       stats: {
         health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
         strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
@@ -964,6 +970,7 @@ export default function App() {
         id: Math.random().toString(36).substr(2, 9),
         name: getUniqueName(prev.slimes),
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        ...rollNewSlimeVisuals(),
         stats: {
           health: 10 + Math.floor(Math.random() * 10),
           strength: 5 + Math.floor(Math.random() * 5),
@@ -991,7 +998,7 @@ export default function App() {
           animate={{ scale: 1, opacity: 1 }}
           className="mb-8 bg-gradient-to-br from-emerald-900 to-teal-800 bg-clip-text text-4xl font-bold text-transparent drop-shadow-sm"
         >
-          Slime Sprouts
+          Slime School Tycoon
         </motion.h1>
         <div className="h-4 w-full max-w-xs overflow-hidden rounded-full border-2 border-white/40 bg-white/25 shadow-inner backdrop-blur-sm">
           <motion.div 
@@ -1016,7 +1023,7 @@ export default function App() {
           transition={{ repeat: Infinity, duration: 2 }}
           className="mb-4 bg-gradient-to-br from-emerald-900 via-teal-800 to-orange-800 bg-clip-text text-center text-5xl font-bold text-transparent"
         >
-          Slime Sprouts
+          Slime School Tycoon
         </motion.h1>
         <motion.p 
           animate={{ opacity: [0.4, 1, 0.4] }}
@@ -1417,21 +1424,8 @@ export default function App() {
                   transition={{ repeat: Infinity, duration: 3 }}
                   className="absolute inset-0 bg-white rounded-full blur-3xl"
                 />
-                <div 
-                  className="w-40 h-40 rounded-full shadow-2xl relative flex items-center justify-center"
-                  style={{ backgroundColor: state.newlyHatchedSlime.color }}
-                >
-                  {/* Cute Eyes */}
-                  <div className="flex gap-6">
-                    <div className="w-6 h-6 bg-white rounded-full relative">
-                      <div className="absolute top-1 right-1 w-2 h-2 bg-black rounded-full" />
-                      <div className="absolute top-1 left-1 w-1 h-1 bg-black/20 rounded-full" />
-                    </div>
-                    <div className="w-6 h-6 bg-white rounded-full relative">
-                      <div className="absolute top-1 right-1 w-2 h-2 bg-black rounded-full" />
-                      <div className="absolute top-1 left-1 w-1 h-1 bg-black/20 rounded-full" />
-                    </div>
-                  </div>
+                <div className="relative flex w-40 items-center justify-center">
+                  <SlimeStackSprite slime={state.newlyHatchedSlime} size="2xl" className="shadow-2xl ring-4 ring-white/30" />
                 </div>
               </div>
 
@@ -1574,18 +1568,9 @@ export default function App() {
                 <motion.div 
                   initial={{ rotate: -5, scale: 0.8 }}
                   animate={{ rotate: 0, scale: 1 }}
-                  className="w-20 h-20 rounded-full mb-4 shadow-xl relative flex items-center justify-center overflow-hidden" 
-                  style={{ backgroundColor: selectedSlimeDetail.color }}
+                  className="mb-4"
                 >
-                  <div className="flex gap-2.5">
-                    <div className="w-2.5 h-2.5 bg-white rounded-full relative">
-                      <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
-                    </div>
-                    <div className="w-2.5 h-2.5 bg-white rounded-full relative">
-                      <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-black rounded-full" />
-                    </div>
-                  </div>
-                  <div className="absolute bottom-2.5 w-6 h-1 bg-black/20 rounded-full" />
+                  <SlimeStackSprite slime={selectedSlimeDetail} size="xl" className="shadow-xl ring-2 ring-emerald-100/80" />
                 </motion.div>
 
                 <h3 className="text-xl font-black text-gray-800 mb-1">{selectedSlimeDetail.name}</h3>
@@ -2047,15 +2032,7 @@ export default function App() {
                               }`}
                             >
                               {slime ? (
-                                <div
-                                  className="relative flex h-10 w-10 items-center justify-center rounded-full shadow-inner"
-                                  style={{ backgroundColor: slime.color }}
-                                >
-                                  <div className="flex gap-1.5">
-                                    <div className="relative h-2 w-2 rounded-full bg-white" />
-                                    <div className="relative h-2 w-2 rounded-full bg-white" />
-                                  </div>
-                                </div>
+                                <SlimeStackSprite slime={slime} size="lg" className="shadow-inner" />
                               ) : (
                                 <Plus className="h-6 w-6 text-gray-300" />
                               )}
@@ -2094,15 +2071,7 @@ export default function App() {
                                 : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
                             }`}
                           >
-                            <div
-                              className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-inner"
-                              style={{ backgroundColor: slime.color }}
-                            >
-                              <div className="flex gap-1">
-                                <div className="relative h-1.5 w-1.5 rounded-full bg-white" />
-                                <div className="relative h-1.5 w-1.5 rounded-full bg-white" />
-                              </div>
-                            </div>
+                            <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
 
                             <div className="w-full text-center">
                               <div className="mb-1 truncate text-[9px] font-black leading-none text-gray-800">
@@ -2511,7 +2480,7 @@ const SlimeCard: React.FC<{
         isEquipped ? 'border-orange-200 bg-gradient-to-b from-amber-50 to-orange-50 ring-1 ring-orange-200/60' : 'border-emerald-100/80 bg-white hover:border-orange-200/60'
       }`}
     >
-      {hasAffordableStatUpgrade && (
+      {detailSeen && hasAffordableStatUpgrade && (
         <div
           className="pointer-events-none absolute -right-0.5 -top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white"
           aria-hidden
@@ -2519,24 +2488,14 @@ const SlimeCard: React.FC<{
           <ArrowUp className="h-3 w-3" strokeWidth={2.75} />
         </div>
       )}
-      <div 
-        className="w-10 h-10 rounded-full mb-2 shadow-inner relative overflow-hidden flex items-center justify-center" 
-        style={{ backgroundColor: slime.color }}
-      >
-        {!detailSeen && (
-          <span
-            className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 shadow-md ring-2 ring-white"
-            aria-hidden
-          />
-        )}
-        <div className="flex gap-1.5">
-          <div className="w-2 h-2 bg-white rounded-full relative">
-            <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-          </div>
-          <div className="w-2 h-2 bg-white rounded-full relative">
-            <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-          </div>
-        </div>
+      {!detailSeen && (
+        <span
+          className="pointer-events-none absolute -left-0.5 -top-0.5 z-20 h-2.5 w-2.5 rounded-full bg-red-500 shadow-md ring-2 ring-white"
+          aria-hidden
+        />
+      )}
+      <div className="relative mb-2">
+        <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
       </div>
       <h4 className="font-bold text-gray-800 text-[10px] mb-0.5 text-center truncate w-full px-1">
         {slime.name}

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.nightskygames.slimesprout',
-  appName: 'Slime Sprout',
+  appName: 'Slime School Tycoon',
   webDir: 'dist'
 };
 

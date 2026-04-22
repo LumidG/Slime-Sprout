@@ -20,6 +20,7 @@ import {
   ARENA_TEAM_SIZE,
   type ArenaEnemyDisplay,
 } from '../constants';
+import { drawSlimeSpriteStack, loadSlimeSpriteImageCache } from '../slimeSprites';
 
 type EnergyOrb = { id: number; x: number; y: number; scale: number };
 
@@ -47,6 +48,9 @@ function enemyAsSlime(e: ArenaEnemyDisplay): Slime {
     id: e.id,
     name: e.name,
     color: e.color,
+    slimeBody: e.slimeBody,
+    slimeEyes: e.slimeEyes,
+    slimeAccessory: e.slimeAccessory,
     stats: { health: 12, strength: 12, agility: e.agility },
     statLevels: { health: 1, strength: 1, agility: 1 },
     trait: 'None',
@@ -411,6 +415,19 @@ export function ArenaBattleCanvas({
     enemies,
   });
   propsRef.current = { playerSlimes, enemies };
+
+  const slimeSpriteCacheRef = useRef<Map<string, HTMLImageElement> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadSlimeSpriteImageCache().then((m) => {
+      if (!cancelled) {
+        slimeSpriteCacheRef.current = m;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -942,10 +959,35 @@ export function ArenaBattleCanvas({
       drawArenaAbilityVfx(ctx, slime.arenaAbility, timeNow, procRaw, drawRadius, side);
 
       ctx.globalAlpha = 1;
-      ctx.fillStyle = slime.color;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const cache = slimeSpriteCacheRef.current;
+      const stackSize = drawRadius * 2.25;
+      let drewSprites = false;
+      if (cache) {
+        ctx.save();
+        ctx.scale(1 / squashStretch, squashStretch);
+        drewSprites = drawSlimeSpriteStack(ctx, cache, slime, stackSize);
+        ctx.restore();
+      }
+      if (!drewSprites) {
+        ctx.fillStyle = slime.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(-drawRadius * 0.3, -drawRadius * 0.3, drawRadius * 0.2, drawRadius * 0.4, Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(-3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
+        ctx.arc(3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(-2.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
+        ctx.arc(3.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       if (meleeProg !== null) {
         drawArenaMeleeSpecialAttackVfx(ctx, slime.arenaAbility, meleeProg, meleeTx, meleeTy, drawRadius);
@@ -959,22 +1001,6 @@ export function ArenaBattleCanvas({
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.beginPath();
-      ctx.ellipse(-drawRadius * 0.3, -drawRadius * 0.3, drawRadius * 0.2, drawRadius * 0.4, Math.PI / 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = 'white';
-      ctx.beginPath();
-      ctx.arc(-3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
-      ctx.arc(3 * burstPulse, -2 * burstPulse, 2 * burstPulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'black';
-      ctx.beginPath();
-      ctx.arc(-2.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
-      ctx.arc(3.5 * burstPulse, -1.5 * burstPulse, 0.8 * burstPulse, 0, Math.PI * 2);
-      ctx.fill();
 
       const hasArena = slime.arenaAbility !== 'None';
       const energyY = -drawRadius - 8;

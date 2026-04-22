@@ -7,6 +7,7 @@ import {
   getPlayerAuctionOpeningMinBid,
   getPlayerSellNowPrice,
 } from '../constants';
+import { SlimeStackSprite } from './SlimeStackSprite';
 
 function timeLeftMs(endsAt: number): number {
   return Math.max(0, endsAt - Date.now());
@@ -87,15 +88,12 @@ export function SlimeMarketPanel({
                   className="rounded-2xl border border-amber-100/90 bg-white p-3 shadow-sm ring-1 ring-amber-50/80"
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-inner"
-                      style={{ backgroundColor: a.slime.color }}
-                    >
-                      <div className="flex gap-1">
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                      </div>
-                    </div>
+                    <SlimeStackSprite
+                      slime={a.slime}
+                      size="lg"
+                      className="shrink-0 shadow-inner"
+                      roundedClassName="rounded-2xl"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] font-black text-gray-900">{a.slime.name}</p>
                       <p className="text-[9px] font-bold text-gray-600">
@@ -141,15 +139,12 @@ export function SlimeMarketPanel({
                   className="rounded-2xl border border-emerald-100/90 bg-white p-3 shadow-sm ring-1 ring-emerald-50/80"
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-inner"
-                      style={{ backgroundColor: slime.color }}
-                    >
-                      <div className="flex gap-1">
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                      </div>
-                    </div>
+                    <SlimeStackSprite
+                      slime={slime}
+                      size="lg"
+                      className="shrink-0 shadow-inner"
+                      roundedClassName="rounded-2xl"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] font-black text-gray-900">{slime.name}</p>
                       <p className="text-[9px] font-bold text-gray-600">
@@ -235,15 +230,12 @@ export function SlimeMarketPanel({
                   className="rounded-2xl border border-emerald-100/90 bg-white p-3 shadow-sm ring-1 ring-emerald-50/80"
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-inner"
-                      style={{ backgroundColor: a.slime.color }}
-                    >
-                      <div className="flex gap-1">
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                        <div className="h-2 w-2 rounded-full bg-white" />
-                      </div>
-                    </div>
+                    <SlimeStackSprite
+                      slime={a.slime}
+                      size="lg"
+                      className="shrink-0 shadow-inner"
+                      roundedClassName="rounded-2xl"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] font-black text-gray-900">{a.slime.name}</p>
                       <p className="text-[9px] font-bold text-gray-600">

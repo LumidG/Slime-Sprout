@@ -1,5 +1,5 @@
 {
-  "name": "slime-sprout",
+  "name": "slime-school-tycoon",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "sync:android": "npm run build && npx cap sync android",
-    "android": "npm run build && npx cap sync android && npx cap run android"
+    "android": "npm run build && npx cap sync android && npx cap run android",
+    "align:sprites": "node scripts/align-slime-sprite-anchors.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
@@ -25,6 +26,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

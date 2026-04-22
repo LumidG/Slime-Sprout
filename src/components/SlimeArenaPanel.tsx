@@ -15,6 +15,7 @@ import {
   type ArenaEncounter,
 } from '../constants';
 import { ArenaBattleCanvas } from './ArenaBattleCanvas';
+import { SlimeStackSprite } from './SlimeStackSprite';
 
 type Props = {
   slimes: Slime[];
@@ -345,7 +346,9 @@ export function SlimeArenaPanel({
             Your team ({ARENA_TEAM_SIZE})
           </p>
           <div className="flex flex-wrap justify-center gap-1.5">
-            {team.map((id, i) => (
+            {team.map((id, i) => {
+              const lineSlime = id ? slimes.find((s) => s.id === id) : null;
+              return (
               <button
                 key={`tm-${i}`}
                 type="button"
@@ -354,19 +357,19 @@ export function SlimeArenaPanel({
               >
                 {id ? (
                   <>
-                    <div
-                      className="mb-0.5 h-8 w-8 rounded-full shadow-inner ring-2 ring-white"
-                      style={{ backgroundColor: slimes.find((s) => s.id === id)?.color ?? '#ccc' }}
-                    />
+                    {lineSlime && (
+                      <SlimeStackSprite slime={lineSlime} size="md" className="mb-0.5 ring-2 ring-white" />
+                    )}
                     <span className="max-w-full truncate px-0.5 text-[7px] font-black text-zinc-700">
-                      {slimes.find((s) => s.id === id)?.name ?? '?'}
+                      {lineSlime?.name ?? '?'}
                     </span>
                   </>
                 ) : (
                   <span className="text-[9px] font-black text-violet-300">{i + 1}</span>
                 )}
               </button>
-            ))}
+            );
+            })}
           </div>
         </div>
       </div>
@@ -390,15 +393,7 @@ export function SlimeArenaPanel({
                     : 'border-emerald-50 bg-white shadow-sm hover:border-violet-200'
                 }`}
               >
-                <div
-                  className="relative flex h-8 w-8 items-center justify-center rounded-full shadow-inner"
-                  style={{ backgroundColor: slime.color }}
-                >
-                  <div className="flex gap-1">
-                    <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                    <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                  </div>
-                </div>
+                <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
                 <div className="w-full truncate text-center text-[8px] font-black leading-none text-gray-800">{slime.name}</div>
                 <div className="grid w-full grid-cols-3 gap-0">
                   <div className="flex flex-col items-center">

@@ -1,10 +1,10 @@
-# AGENTS.md — Slime Sprout
+# AGENTS.md — Slime School Tycoon
 
 Guidance for coding agents working in this repository.
 
 ## What this is
 
-**Slime Sprout** is a browser-first idle / collection game: tap coins in a canvas playfield, buy eggs, hatch slimes with traits, upgrade stats, and breed slimes. The UI is a single mobile-style column (`max-w-md`) aimed at touch and Capacitor Android.
+**Slime School Tycoon** is a browser-first idle / collection game: tap coins in a canvas playfield, buy eggs, hatch slimes with traits, upgrade stats, and breed slimes. The UI is a single mobile-style column (`max-w-md`) aimed at touch and Capacitor Android.
 
 ## Stack
 
