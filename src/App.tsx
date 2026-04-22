@@ -263,6 +263,9 @@ export default function App() {
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
   const isGameTab = state.activeTab === 'game';
+  /** Arena fight overlay is z-[115]; raise header/options above it so the menu stays reachable mid-fight. */
+  const shellOverArenaFight =
+    state.activeTab === 'arena' && arenaBattleActive;
 
   const openSlimeDetail = useCallback((slime: Slime) => {
     setState((prev) =>
@@ -1092,7 +1095,9 @@ export default function App() {
         className={
           isGameTab
             ? 'glass-header-game pointer-events-none absolute top-0 right-0 left-0 z-30 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
-            : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
+            : shellOverArenaFight
+              ? 'glass-header-page relative z-[125] grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
+              : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
         }
       >
         <button
@@ -1143,7 +1148,11 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[101] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
+            className={
+              shellOverArenaFight
+                ? 'absolute inset-0 z-[125] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm'
+                : 'absolute inset-0 z-[101] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm'
+            }
             onClick={() => setIsOptionsOpen(false)}
           >
             <motion.div
@@ -2189,6 +2198,7 @@ export default function App() {
                 arenaWins={state.arenaWins}
                 slimeArenaAbilityCooldownUntil={state.slimeArenaAbilityCooldownUntil}
                 now={nowMs}
+                optionsMenuOpen={isOptionsOpen}
                 onBattleActiveChange={setArenaBattleActive}
                 onReturnToArenaTab={() => setState((s) => ({ ...s, activeTab: 'arena' }))}
                 onBattleEnd={handleArenaBattleEnd}

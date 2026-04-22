@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Heart, HeartCrack, Sword, Wind, Swords, Coins, Zap } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
@@ -22,6 +22,8 @@ type Props = {
   arenaWins: number;
   slimeArenaAbilityCooldownUntil: Record<string, number>;
   now: number;
+  /** When true, freezes arena countdown, canvas sim, and battle timer (e.g. app options menu open). */
+  optionsMenuOpen?: boolean;
   /** Fires when the timed battle canvas starts / ends (not lineup / results screens). */
   onBattleActiveChange?: (active: boolean) => void;
   /** Ensures the shell shows the Arena tab after a result (claim rewards, try again, or quit). */
@@ -98,6 +100,7 @@ export function SlimeArenaPanel({
   arenaWins,
   slimeArenaAbilityCooldownUntil,
   now,
+  optionsMenuOpen = false,
   onBattleActiveChange,
   onReturnToArenaTab,
   onBattleEnd,
@@ -151,13 +154,34 @@ export function SlimeArenaPanel({
 
   useEffect(() => {
     if (preBattleCountdown == null || preBattleCountdown <= 0) return;
+    if (optionsMenuOpen) return;
     const t = window.setTimeout(() => {
       setPreBattleCountdown((c) => (c != null && c > 0 ? c - 1 : c));
     }, ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS);
     return () => window.clearTimeout(t);
-  }, [preBattleCountdown]);
+  }, [preBattleCountdown, optionsMenuOpen]);
   const resolveContextRef = useRef<ResolveContext | null>(null);
   const playerAbilityFiredRef = useRef<Record<string, boolean>>({});
+  /** Wall-time spent in menu pause; subtracted from rAF elapsed so the fight does not end while paused. */
+  const battlePausedMsAccumRef = useRef(0);
+  const battlePauseStartedAtRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!battleSession) {
+      battlePausedMsAccumRef.current = 0;
+      battlePauseStartedAtRef.current = null;
+      return;
+    }
+    if (preBattleCountdown !== 0) return;
+    if (optionsMenuOpen) {
+      if (battlePauseStartedAtRef.current === null) {
+        battlePauseStartedAtRef.current = performance.now();
+      }
+    } else if (battlePauseStartedAtRef.current !== null) {
+      battlePausedMsAccumRef.current += performance.now() - battlePauseStartedAtRef.current;
+      battlePauseStartedAtRef.current = null;
+    }
+  }, [optionsMenuOpen, battleSession, preBattleCountdown]);
 
   const lineupIds = useMemo(
     () => team.filter((x): x is string => x != null),
@@ -200,7 +224,11 @@ export function SlimeArenaPanel({
     const start = performance.now();
     const step = (t: number) => {
       if (cancelled) return;
-      const p = Math.min(1, (t - start) / ARENA_BATTLE_DURATION_MS);
+      const wallElapsed = t - start;
+      const currentMenuPause =
+        battlePauseStartedAtRef.current !== null ? t - battlePauseStartedAtRef.current : 0;
+      const fightElapsed = wallElapsed - battlePausedMsAccumRef.current - currentMenuPause;
+      const p = Math.min(1, fightElapsed / ARENA_BATTLE_DURATION_MS);
       if (p < 1) {
         rafId = requestAnimationFrame(step);
       } else {
@@ -451,7 +479,9 @@ export function SlimeArenaPanel({
                 enemies={battleSession.enemies}
                 playerAbilityFiredRef={playerAbilityFiredRef}
                 onAbilityFired={(id) => setLiveAbilityFired((p) => ({ ...p, [id]: true }))}
-                paused={preBattleCountdown != null && preBattleCountdown > 0}
+                paused={
+                  (preBattleCountdown != null && preBattleCountdown > 0) || optionsMenuOpen
+                }
               />
             </div>
             <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 py-2">
