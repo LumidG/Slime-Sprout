@@ -27,7 +27,7 @@ export interface Slime {
   color: string;
   /** Layer 1: body sprite `s_Slime1`–`s_Slime8` (index 1–8). */
   slimeBody: number;
-  /** Layer 2: eyes — always present; `s_Eyes1`–`s_Eyes4` (index 1–4). */
+  /** Layer 2: eyes — `0` = none; otherwise `s_Eyes1`–`s_Eyes4` (index 1–4). */
   slimeEyes: number;
   /** Layer 3: accessory, or 0 for none; `s_Accessory1`–`s_Accessory6` (index 1–6). */
   slimeAccessory: number;

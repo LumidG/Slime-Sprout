@@ -69,6 +69,7 @@ function mapLegacySlimeBody(n: number, fallback: number): number {
 }
 
 function mapLegacySlimeEyes(n: number, fallback: number): number {
+  if (n === 0) return 0;
   if (!Number.isInteger(n) || n < 1 || n > SLIME_SPRITE_EYES_MAX) {
     return fallback;
   }
@@ -107,8 +108,8 @@ export function withSlimeVisualDefaults(s: Slime): Slime {
     typeof s.slimeBody === 'number' && Number.isInteger(s.slimeBody) && s.slimeBody >= 1 ? s.slimeBody : d.slimeBody;
   const body = mapLegacySlimeBody(bodyRaw, d.slimeBody);
   const eyesRaw =
-    typeof s.slimeEyes === 'number' && Number.isInteger(s.slimeEyes) && s.slimeEyes >= 1 ? s.slimeEyes : d.slimeEyes;
-  const eyes = mapLegacySlimeEyes(eyesRaw, d.slimeEyes);
+    typeof s.slimeEyes === 'number' && Number.isInteger(s.slimeEyes) && s.slimeEyes >= 0 ? s.slimeEyes : d.slimeEyes;
+  const eyes = eyesRaw === 0 ? 0 : mapLegacySlimeEyes(eyesRaw, d.slimeEyes);
   const accRaw =
     typeof s.slimeAccessory === 'number' && Number.isInteger(s.slimeAccessory) && s.slimeAccessory >= 0
       ? s.slimeAccessory
@@ -168,11 +169,14 @@ export function drawSlimeSpriteStack(
 ): boolean {
   const v = withSlimeVisualDefaults(slime);
   const bodyUrl = slimeBodySrc(v.slimeBody);
-  const eyesUrl = slimeEyesSrc(v.slimeEyes);
+  const eyesUrl = v.slimeEyes > 0 ? slimeEyesSrc(v.slimeEyes) : null;
   const accUrl = v.slimeAccessory > 0 ? slimeAccessorySrc(v.slimeAccessory) : null;
   const body = cache.get(bodyUrl);
-  const eyes = cache.get(eyesUrl);
-  if (!body || !body.complete || !eyes || !eyes.complete) {
+  const eyes = eyesUrl ? cache.get(eyesUrl) : null;
+  if (!body || !body.complete) {
+    return false;
+  }
+  if (eyesUrl && (!eyes || !eyes.complete)) {
     return false;
   }
   if (accUrl) {
@@ -187,7 +191,7 @@ export function drawSlimeSpriteStack(
     ctx.drawImage(im, -size * 0.5, -size * 0.5, size, size);
   };
   draw(body);
-  draw(eyes);
+  if (eyes) draw(eyes);
   if (accUrl) {
     const acc = cache.get(accUrl);
     if (acc) draw(acc);

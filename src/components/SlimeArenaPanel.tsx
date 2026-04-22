@@ -316,7 +316,7 @@ export function SlimeArenaPanel({
   }, [clearLineup, onReturnToArenaTab]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden uppercase">
       <div className="shrink-0 space-y-2 border-b border-violet-200/80 bg-gradient-to-b from-violet-50 via-white to-orange-50/40 px-3 pb-2 pt-3">
         <div className="flex flex-col items-center gap-0.5">
           <Swords className="h-7 w-7 text-violet-600 drop-shadow-sm" aria-hidden />
@@ -353,7 +353,7 @@ export function SlimeArenaPanel({
                 key={`tm-${i}`}
                 type="button"
                 onClick={() => id && toggleSlimeInLineup(id)}
-                className="flex h-14 w-[4rem] flex-col items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-white/90 shadow-sm transition-all"
+                className="flex h-16 w-[4rem] flex-col items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-white/90 py-0.5 shadow-sm transition-all"
               >
                 {id ? (
                   <>
@@ -395,18 +395,24 @@ export function SlimeArenaPanel({
               >
                 <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
                 <div className="w-full truncate text-center text-[8px] font-black leading-none text-gray-800">{slime.name}</div>
-                <div className="grid w-full grid-cols-3 gap-0">
-                  <div className="flex flex-col items-center">
-                    <Heart className="h-2 w-2 text-red-400" />
-                    <span className="text-[6px] font-black text-gray-500">{slime.stats.health}</span>
+                <div className="flex w-full items-center justify-center gap-1.5 px-0.5">
+                  <div className="inline-flex items-center gap-0.5">
+                    <Heart className="h-2.5 w-2.5 shrink-0 text-red-500" />
+                    <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                      {slime.stats.health}
+                    </span>
                   </div>
-                  <div className="flex flex-col items-center">
-                    <Sword className="h-2 w-2 text-orange-400" />
-                    <span className="text-[6px] font-black text-gray-500">{slime.stats.strength}</span>
+                  <div className="inline-flex items-center gap-0.5">
+                    <Sword className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                    <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                      {slime.stats.strength}
+                    </span>
                   </div>
-                  <div className="flex flex-col items-center">
-                    <Wind className="h-2 w-2 text-blue-400" />
-                    <span className="text-[6px] font-black text-gray-500">{slime.stats.agility}</span>
+                  <div className="inline-flex items-center gap-0.5">
+                    <Wind className="h-2.5 w-2.5 shrink-0 text-blue-500" />
+                    <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                      {slime.stats.agility}
+                    </span>
                   </div>
                 </div>
               </button>
@@ -429,7 +435,7 @@ export function SlimeArenaPanel({
             type="button"
             onClick={runBattle}
             disabled={!canFight || !!battleSession}
-            className="ui-afford-disabled rounded-xl border-2 border-violet-500 bg-gradient-to-br from-violet-500 to-purple-700 px-5 py-2 text-xs font-black text-white shadow-md shadow-violet-900/20 transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-600 disabled:shadow-none"
+            className="ui-afford-disabled min-h-12 rounded-xl border-2 border-violet-500 bg-gradient-to-br from-violet-500 to-purple-700 px-6 py-2.5 text-base font-black text-white shadow-md shadow-violet-900/20 transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-600 disabled:shadow-none"
           >
             Start battle
           </button>
@@ -510,7 +516,7 @@ export function SlimeArenaPanel({
                     const meta = ARENA_ABILITY_META[foe.ability];
                     return (
                       <div key={foe.id} className="rounded-lg border border-rose-500/20 bg-rose-950/30 px-1.5 py-1">
-                        <p className="mb-0.5 truncate text-[7px] font-black capitalize text-rose-100/90">{foe.name}</p>
+                        <p className="mb-0.5 truncate text-[7px] font-black text-rose-100/90">{foe.name}</p>
                         <AbilityCooldownRow
                           ability={foe.ability}
                           label={meta.name}
@@ -579,7 +585,7 @@ export function SlimeArenaPanel({
                 <button
                   type="button"
                   onClick={closeVictory}
-                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-sm font-black text-white shadow-lg"
+                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-base font-black text-white shadow-lg"
                 >
                   Claim rewards
                 </button>
@@ -588,14 +594,14 @@ export function SlimeArenaPanel({
                   <button
                     type="button"
                     onClick={closeDefeatTryDifferentTeam}
-                    className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-sm font-black text-white shadow-lg"
+                    className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-base font-black text-white shadow-lg"
                   >
                     Try a different team
                   </button>
                   <button
                     type="button"
                     onClick={closeDefeatQuit}
-                    className="w-full rounded-2xl border-2 border-zinc-300 bg-white/90 py-3 text-sm font-black text-zinc-700 shadow-sm"
+                    className="w-full rounded-2xl border-2 border-zinc-300 bg-white/90 py-3 text-base font-black text-zinc-700 shadow-sm"
                   >
                     Quit
                   </button>

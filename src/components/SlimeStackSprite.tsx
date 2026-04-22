@@ -8,10 +8,10 @@ import {
 } from '../slimeSprites';
 
 const sizeMap = {
-  xs: 'h-6 w-6',
-  sm: 'h-7 w-7',
-  md: 'h-10 w-10',
-  lg: 'h-12 w-12',
+  xs: 'h-7 w-7',
+  sm: 'h-8 w-8',
+  md: 'h-12 w-12',
+  lg: 'h-16 w-16',
   xl: 'h-20 w-20',
   '2xl': 'h-40 w-40',
 } as const;
@@ -22,18 +22,18 @@ type Props = {
   slime: Slime;
   size?: Size;
   className?: string;
-  /** e.g. ring when selected — default rounded-full. */
+  /** Corner radius for the frame (default: soft square, not a circle, so the full art stays visible). */
   roundedClassName?: string;
 };
 
 /**
- * Renders a slime in layer order: body, eyes, accessory (optional). Eyes are always present.
+ * Renders a slime in layer order: body, eyes (optional if `slimeEyes === 0`), accessory (optional).
  */
 export function SlimeStackSprite({
   slime,
   size = 'md',
   className = '',
-  roundedClassName = 'rounded-full',
+  roundedClassName = 'rounded-xl',
 }: Props) {
   const v = withSlimeVisualDefaults(slime);
   const dim = sizeMap[size] ?? sizeMap.md;
@@ -47,12 +47,14 @@ export function SlimeStackSprite({
         className="pointer-events-none absolute inset-0 h-full w-full object-fill"
         draggable={false}
       />
-      <img
-        src={slimeEyesSrc(v.slimeEyes)}
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-fill"
-        draggable={false}
-      />
+      {v.slimeEyes > 0 && (
+        <img
+          src={slimeEyesSrc(v.slimeEyes)}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-fill"
+          draggable={false}
+        />
+      )}
       {v.slimeAccessory > 0 && (
         <img
           src={slimeAccessorySrc(v.slimeAccessory)}

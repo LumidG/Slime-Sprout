@@ -47,13 +47,13 @@ export function SlimeMarketPanel({
   const playerAuctions = auctions.filter((x) => x.seller === 'player');
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden uppercase">
       <div className="shrink-0 border-b border-emerald-100/80 bg-white/90 px-3 pb-2 pt-2">
         <div className="flex rounded-2xl bg-emerald-100/50 p-0.5 ring-1 ring-emerald-200/60">
           <button
             type="button"
             onClick={() => setMarketTab('sell')}
-            className={`flex-1 rounded-[14px] py-2 text-[11px] font-bold transition ${
+            className={`flex-1 rounded-[14px] py-2 text-[11px] font-black tracking-wide transition ${
               marketTab === 'sell'
                 ? 'bg-white text-emerald-900 shadow-sm ring-1 ring-emerald-200/80'
                 : 'text-emerald-700/70'
@@ -64,7 +64,7 @@ export function SlimeMarketPanel({
           <button
             type="button"
             onClick={() => setMarketTab('buy')}
-            className={`flex-1 rounded-[14px] py-2 text-[11px] font-bold transition ${
+            className={`flex-1 rounded-[14px] py-2 text-[11px] font-black tracking-wide transition ${
               marketTab === 'buy'
                 ? 'bg-white text-emerald-900 shadow-sm ring-1 ring-emerald-200/80'
                 : 'text-emerald-700/70'
@@ -171,12 +171,12 @@ export function SlimeMarketPanel({
                     <button
                       type="button"
                       onClick={() => onSellSlimeNow(slime.id)}
-                      className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-100 to-teal-100 py-2 pl-2 pr-1.5 text-[10px] font-black leading-tight text-emerald-950 shadow-sm"
+                      className="flex min-h-12 min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-xl py-2.5 pl-2.5 pr-2 text-sm font-black tracking-widest transition-all btn-primary-glow shadow-md"
                     >
-                      <Coins className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                      <span className="min-w-0 text-center">
-                        Sell now
-                        <span className="block tabular-nums text-[9px] font-black text-emerald-800/90">
+                      <Coins className="h-4 w-4 shrink-0 text-white/90" />
+                      <span className="min-w-0 whitespace-nowrap text-center">
+                        Sell now{' '}
+                        <span className="tabular-nums text-xs font-black tracking-normal text-white/90">
                           {sellNow.toLocaleString()} 💰
                         </span>
                       </span>
@@ -184,11 +184,12 @@ export function SlimeMarketPanel({
                     <button
                       type="button"
                       onClick={() => onListSlimeAuction(slime.id)}
-                      className="flex min-w-0 flex-1 items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 pl-2 pr-1.5 text-[10px] font-black leading-tight text-white shadow-sm"
+                      className="flex min-h-12 min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 pl-2.5 pr-2 text-sm font-black leading-tight text-white shadow-sm"
                     >
-                      <span className="min-w-0 text-center">
-                        Auction
-                        <span className="block tabular-nums text-[9px] font-black opacity-95">
+                      <Gavel className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 whitespace-nowrap text-center">
+                        Auction{' '}
+                        <span className="tabular-nums text-xs opacity-95">
                           {auctionOpenMin.toLocaleString()} 🔨
                         </span>
                       </span>
@@ -224,6 +225,9 @@ export function SlimeMarketPanel({
               const high =
                 a.currentBid > 0 ? `${a.currentBid} 💰` : '—';
               const isWinning = a.highBidder === 'player';
+              const redInstantPrice =
+                !instantLocked && left > 0 && !affordableInstant;
+              const redBidPrice = !isWinning && left > 0 && !affordableBid;
               return (
                 <div
                   key={a.id}
@@ -270,15 +274,29 @@ export function SlimeMarketPanel({
                       onClick={() => onInstantBuy(a.id)}
                       title={
                         instantLocked
-                          ? 'Unavailable after you bid — wait for the auction to end.'
+                          ? 'UNAVAILABLE AFTER YOU BID — WAIT FOR THE AUCTION TO END.'
                           : undefined
                       }
-                      className="ui-afford-disabled flex min-w-0 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-100 to-teal-100 py-2 pl-2 pr-1.5 text-[10px] font-black leading-tight text-emerald-950 shadow-sm disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-200 disabled:text-zinc-600"
+                      className="ui-afford-disabled flex min-h-12 min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-xl py-2.5 pl-2.5 pr-2 text-sm font-black tracking-widest transition-all btn-primary-glow shadow-md disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-700"
                     >
-                      <Coins className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                      <span className="min-w-0 text-center">
-                        Buy now
-                        <span className="block tabular-nums text-[9px] font-black text-emerald-800/90">
+                      <Coins
+                        className={`h-4 w-4 shrink-0 ${
+                          redInstantPrice ? 'text-zinc-500' : 'text-white/90'
+                        }`}
+                      />
+                      <span
+                        className={`min-w-0 whitespace-nowrap text-center ${
+                          redInstantPrice ? 'text-zinc-600' : 'text-white/95'
+                        }`}
+                      >
+                        Buy now{' '}
+                        <span
+                          className={`text-xs font-black tabular-nums tracking-normal ${
+                            redInstantPrice
+                              ? 'text-red-600'
+                              : 'text-white/90'
+                          }`}
+                        >
                           {instant.toLocaleString()} 💰
                         </span>
                       </span>
@@ -289,15 +307,37 @@ export function SlimeMarketPanel({
                       onClick={() => onBid(a.id)}
                       title={
                         isWinning
-                          ? 'You can bid again after someone outbids you.'
+                          ? 'YOU CAN BID AGAIN AFTER SOMEONE OUTBIDS YOU.'
                           : undefined
                       }
-                      className="ui-afford-disabled flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 text-[10px] font-black text-white shadow-sm disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-800"
+                      className="ui-afford-disabled flex min-h-12 min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2.5 pl-2 pr-2 text-sm font-black text-white shadow-sm disabled:border-zinc-300 disabled:from-zinc-200 disabled:to-zinc-300 disabled:text-zinc-800"
                     >
-                      <Gavel className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 text-center leading-tight">
-                        {isWinning ? 'Winning' : 'Bid'}
-                        <span className="block tabular-nums text-[9px] opacity-95">
+                      <Gavel
+                        className={`h-4 w-4 shrink-0 ${
+                          redBidPrice || isWinning
+                            ? 'text-zinc-500'
+                            : 'text-white'
+                        }`}
+                      />
+                      <span
+                        className={`min-w-0 whitespace-nowrap text-center text-xs leading-tight ${
+                          redBidPrice
+                            ? 'text-zinc-600'
+                            : isWinning
+                              ? 'text-zinc-600'
+                              : 'text-white/95'
+                        }`}
+                      >
+                        {isWinning ? 'Winning' : 'Bid'}{' '}
+                        <span
+                          className={`text-xs font-black tabular-nums ${
+                            isWinning
+                              ? 'opacity-95'
+                              : redBidPrice
+                                ? 'text-red-600'
+                                : 'text-white/95'
+                          }`}
+                        >
                           {isWinning
                             ? `${a.playerBidAmount.toLocaleString()} 💰`
                             : `${next.toLocaleString()} 💰`}

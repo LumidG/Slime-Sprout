@@ -478,7 +478,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dimensionsRef = useRef({ width: GAME_WIDTH, height: GAME_HEIGHT });
   const playerRef = useRef({ x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2, radius: 15 });
-  const slimesRef = useRef<Record<string, { x: number, y: number, targetId?: number }>>({});
+  const slimesRef = useRef<
+    Record<string, { x: number; y: number; targetId?: number; moveDist: number; walkPhase: number }>
+  >({});
   const coinsRef = useRef<Coin[]>([]);
   const lastRespawnRef = useRef<number>(0);
   const nextCoinId = useRef(0);
@@ -712,9 +714,11 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     // Update Equipped Slimes
     equippedSlimes.forEach((slime, index) => {
       if (!slimesRef.current[slime.id]) {
-        slimesRef.current[slime.id] = { 
+        slimesRef.current[slime.id] = {
           x: playerRef.current.x + (Math.random() - 0.5) * 60,
-          y: playerRef.current.y + (Math.random() - 0.5) * 60 
+          y: playerRef.current.y + (Math.random() - 0.5) * 60,
+          moveDist: 0,
+          walkPhase: Math.random() * Math.PI * 2,
         };
       }
 
@@ -808,6 +812,13 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         const sdx = sPos.x - slimeBeforeMove.x;
         const sdy = sPos.y - slimeBeforeMove.y;
         const sd = Math.hypot(sdx, sdy);
+        if (sd > 0.05) {
+          sPos.moveDist = sd;
+          if (typeof sPos.walkPhase !== 'number') sPos.walkPhase = Math.random() * Math.PI * 2;
+          sPos.walkPhase += sd * 0.42;
+        } else {
+          sPos.moveDist = 0;
+        }
         if (sd > 0.06) {
           const anchorY = sPos.y + 5;
           const intensity = Math.min(1, sd / 4);
@@ -951,18 +962,22 @@ export const GameWorld: React.FC<GameWorldProps> = ({
 
     drawGroundTrailParticles(ctx, groundTrailRef.current);
 
-    // Draw Coins
+    // Draw Coins (subtle vertical bob: shadow stays on the ground, sprite floats)
     coinsRef.current.forEach((coin) => {
       if (coin.scale < 1) coin.scale += 0.05;
+      const floatY =
+        Math.sin((timeNow / 1500) * (Math.PI * 2) + coin.id * 0.7) * 2.5;
       ctx.save();
       ctx.translate(coin.x, coin.y);
-      ctx.scale(coin.scale, coin.scale);
 
       // Drop shadow (same language as player ground shadow)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
       ctx.beginPath();
       ctx.ellipse(1, 10, 7, 3.5, 0, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.translate(0, floatY);
+      ctx.scale(coin.scale, coin.scale);
       
       // Golden Coin Shape
       ctx.fillStyle = '#FACC15'; // Gold Yellow
@@ -1064,11 +1079,18 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       let jumpY = 0;
       let squashStretch = 1;
       if (isBursting && isSpeedType) {
-        const jumpCycle = (timeNow % 600) / 600; // 600ms per jump
+        const jumpCycle = (timeNow % 600) / 600; // 600ms per walk hop
         jumpY = Math.sin(jumpCycle * Math.PI) * -25;
         // Squash at bottom, stretch at top
         squashStretch = 1 + Math.sin(jumpCycle * Math.PI - Math.PI/2) * 0.15;
       }
+
+      const moveDist = pos.moveDist ?? 0;
+      const isWalking = moveDist > 0.05;
+      const walkWobble =
+        isWalking && !(isBursting && isSpeedType)
+          ? Math.sin(pos.walkPhase ?? 0) * 0.038
+          : 0;
 
       const burstPulse = isBursting ? (Math.sin(timeNow / 100) * 0.05 + 1.05) : 1.0;
       const baseRadius = 10;
@@ -1159,14 +1181,22 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       let drewSprites = false;
       if (cache) {
         ctx.save();
-        ctx.scale(1 / squashStretch, squashStretch);
+        ctx.scale((1 + walkWobble) / squashStretch, (1 - walkWobble) * squashStretch);
         drewSprites = drawSlimeSpriteStack(ctx, cache, slime, stackSize);
         ctx.restore();
       }
       if (!drewSprites) {
         ctx.fillStyle = slime.color;
         ctx.beginPath();
-        ctx.ellipse(0, 0, drawRadius / squashStretch, drawRadius * squashStretch, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+          0,
+          0,
+          (drawRadius * (1 + walkWobble)) / squashStretch,
+          drawRadius * (1 - walkWobble) * squashStretch,
+          0,
+          0,
+          Math.PI * 2
+        );
         ctx.fill();
         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.beginPath();

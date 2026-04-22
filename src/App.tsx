@@ -44,6 +44,8 @@ import {
   TRAITS, 
   UPGRADE_COSTS, 
   EGG_COST,
+  EGG_BULK_10_COST,
+  eggPurchaseCost,
   BREEDING_COST,
   SLIME_UPGRADE_COST,
   SLIME_STAT_UPGRADE_DELTA,
@@ -102,10 +104,10 @@ function OptionsOnOffRow(props: {
       className={`flex items-center justify-between gap-3 rounded-xl border border-emerald-100/80 bg-emerald-50/60 px-3 py-2.5 ${className ?? ''}`}
     >
       <div className="flex min-w-0 items-center gap-2.5">
-        <div className="flex shrink-0 items-center justify-center rounded-lg bg-white/80 p-2 text-emerald-800 shadow-sm" aria-hidden>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/80 text-emerald-800 shadow-sm" aria-hidden>
           {icon}
         </div>
-        <span className="text-sm font-bold text-emerald-900">{label}</span>
+        <span className="text-base font-bold text-emerald-900">{label}</span>
       </div>
       <button
         type="button"
@@ -592,7 +594,7 @@ export default function App() {
   };
 
   const buyEgg = (amount: number = 1) => {
-    const totalCost = EGG_COST * amount;
+    const totalCost = eggPurchaseCost(amount);
     if (state.coins >= totalCost) {
       setState(prev => ({
         ...prev,
@@ -1086,7 +1088,7 @@ export default function App() {
                   </div>
                   <button 
                     onClick={nextOnboarding}
-                    className="btn-primary-glow rounded-xl px-6 py-3 hover:scale-105 active:scale-95"
+                    className="btn-primary-glow rounded-xl px-6 py-3 text-base font-black hover:scale-105 active:scale-95"
                   >
                     {onboardingStep === onboardingMessages.length - 1 ? "Got it!" : "Next"}
                   </button>
@@ -1194,7 +1196,7 @@ export default function App() {
 
               <OptionsOnOffRow
                 className="mb-3"
-                icon={<Music className="h-4 w-4" />}
+                icon={<Music className="h-5 w-5" />}
                 label="Music"
                 switchId="opt-music"
                 checked={state.settings.musicEnabled}
@@ -1207,7 +1209,7 @@ export default function App() {
               />
               <OptionsOnOffRow
                 className="mb-3"
-                icon={<Volume2 className="h-4 w-4" />}
+                icon={<Volume2 className="h-5 w-5" />}
                 label="Sound effects"
                 switchId="opt-sfx"
                 checked={state.settings.sfxEnabled}
@@ -1220,7 +1222,7 @@ export default function App() {
               />
               <OptionsOnOffRow
                 className="mb-4"
-                icon={<Vibrate className="h-4 w-4" />}
+                icon={<Vibrate className="h-5 w-5" />}
                 label="Vibration"
                 switchId="opt-haptics"
                 checked={state.settings.hapticsEnabled}
@@ -1245,7 +1247,7 @@ export default function App() {
                     setIsOptionsOpen(false);
                     window.open(PLAY_STORE_LISTING_URL, '_blank', 'noopener,noreferrer');
                   }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-base font-bold text-emerald-900 transition-colors hover:bg-orange-50"
                 >
                   <Star
                     className="h-5 w-5 shrink-0 fill-amber-400 text-amber-500"
@@ -1261,7 +1263,7 @@ export default function App() {
                     setIsOptionsOpen(false);
                     window.location.href = SUPPORT_MAILTO;
                   }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-sm font-bold text-emerald-900 transition-colors hover:bg-orange-50"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-center text-base font-bold text-emerald-900 transition-colors hover:bg-orange-50"
                 >
                   <Mail
                     className="h-5 w-5 shrink-0 text-emerald-700"
@@ -1415,7 +1417,7 @@ export default function App() {
                 <PartyPopper className="mb-4 h-16 w-16 text-amber-100 drop-shadow-md" />
               </motion.div>
               
-              <h2 className="mb-2 text-4xl font-black text-white drop-shadow-sm">NEW SLIME!</h2>
+              <h2 className="mb-2 text-4xl font-black text-white drop-shadow-sm">New slime!</h2>
               <p className="mb-8 font-bold text-emerald-50">A beautiful new friend has joined your collection!</p>
 
               <div className="relative mb-8">
@@ -1429,23 +1431,61 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white/20 backdrop-blur-sm p-4 rounded-2xl mb-8 w-full max-w-xs">
-                <h3 className="text-white font-black text-xl mb-1">{state.newlyHatchedSlime.name}</h3>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <span className="bg-white/30 px-3 py-1 rounded-full text-xs font-bold text-white">
-                    {state.newlyHatchedSlime.trait}
+              <div className="mb-8 w-full max-w-sm rounded-2xl bg-white/20 p-4 text-left backdrop-blur-sm">
+                <h3 className="mb-1 text-center text-xl font-black text-white">
+                  {state.newlyHatchedSlime.name}
+                </h3>
+                <div className="mb-3 flex justify-center">
+                  <span className="rounded-full bg-white/25 px-2.5 py-0.5 text-[10px] font-black text-white">
+                    Level {state.newlyHatchedSlime.level}
                   </span>
-                  <span className="bg-violet-500/40 px-3 py-1 rounded-full text-xs font-bold text-white ring-1 ring-white/30">
-                    Arena: {ARENA_ABILITY_META[state.newlyHatchedSlime.arenaAbility].name}
-                  </span>
+                </div>
+
+                <div className="mb-3 flex items-center justify-center gap-4 rounded-xl bg-black/10 px-3 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Heart className="h-4 w-4 shrink-0 text-red-200" aria-hidden />
+                    <span className="text-sm font-black tabular-nums text-white">
+                      {state.newlyHatchedSlime.stats.health}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Sword className="h-4 w-4 shrink-0 text-amber-200" aria-hidden />
+                    <span className="text-sm font-black tabular-nums text-white">
+                      {state.newlyHatchedSlime.stats.strength}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Wind className="h-4 w-4 shrink-0 text-sky-200" aria-hidden />
+                    <span className="text-sm font-black tabular-nums text-white">
+                      {state.newlyHatchedSlime.stats.agility}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/20 py-3 text-center">
+                  <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-emerald-100/90">
+                    Coin field trait
+                  </p>
+                  <p className="mb-0.5 text-sm font-black text-white">{state.newlyHatchedSlime.trait}</p>
+                  <p className="text-xs font-bold italic leading-snug text-emerald-50/95">"{TRAIT_EFFECTS[state.newlyHatchedSlime.trait].description}"</p>
+                </div>
+
+                <div className="border-t border-white/20 pt-3 text-center">
+                  <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-emerald-100/90">
+                    Arena ability
+                  </p>
+                  <p className="mb-0.5 text-sm font-black text-violet-100">
+                    {ARENA_ABILITY_META[state.newlyHatchedSlime.arenaAbility].name}
+                  </p>
+                  <p className="text-xs font-bold italic leading-snug text-emerald-50/95">"{ARENA_ABILITY_META[state.newlyHatchedSlime.arenaAbility].description}"</p>
                 </div>
               </div>
 
               <button 
                 onClick={() => setState(s => ({ ...s, newlyHatchedSlime: null }))}
-                className="rounded-2xl bg-white px-12 py-4 font-black text-orange-600 shadow-xl ring-2 ring-orange-200/80 transition-transform hover:scale-105"
+                className="rounded-2xl bg-white px-12 py-4 text-lg font-black text-orange-600 shadow-xl ring-2 ring-orange-200/80 transition-transform hover:scale-105"
               >
-                AWESOME!
+                Awesome!
               </button>
             </motion.div>
           </motion.div>
@@ -1492,18 +1532,18 @@ export default function App() {
                     <button onClick={() => debugAddEggs(10)} className="rounded-xl bg-teal-100 py-2 text-xs font-bold text-teal-800">+10 Eggs 🥚</button>
                     <button 
                       onClick={debugAddSlime} 
-                      className="col-span-2 flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-emerald-200 to-lime-100 py-2 text-xs font-bold text-emerald-900"
+                      className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-200 to-lime-100 py-2.5 text-sm font-bold text-emerald-900"
                     >
-                      <Sparkles className="w-3 h-3" /> Add Random Slime
+                      <Sparkles className="h-4 w-4 shrink-0" /> Add Random Slime
                     </button>
                   </div>
                 </div>
 
                 <button 
                   onClick={debugUnlockAll}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-100 py-3 text-sm font-bold text-emerald-800"
+                  className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-100 py-3 text-base font-bold text-emerald-800"
                 >
-                  <Zap className="h-4 w-4" /> Max Upgrades
+                  <Zap className="h-5 w-5 shrink-0" /> Max Upgrades
                 </button>
 
                 <button
@@ -1515,22 +1555,22 @@ export default function App() {
                       ? 'All worlds already unlocked'
                       : 'Unlock the next area and reset shop upgrades (normal level completion)'
                   }
-                  className="ui-afford-disabled flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 py-3 text-sm font-bold text-amber-900 disabled:border-zinc-200 disabled:from-zinc-100 disabled:to-zinc-100 disabled:text-zinc-500"
+                  className="ui-afford-disabled flex w-full items-center justify-center gap-2.5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 py-3 text-base font-bold text-amber-900 disabled:border-zinc-200 disabled:from-zinc-100 disabled:to-zinc-100 disabled:text-zinc-500"
                 >
-                  <Trophy className="h-4 w-4" /> Complete level
+                  <Trophy className="h-5 w-5 shrink-0" /> Complete level
                 </button>
 
                 <button 
                   onClick={debugReset}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 py-3 text-sm font-bold text-red-700"
+                  className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 py-3 text-base font-bold text-red-700"
                 >
-                  <Trash2 className="h-4 w-4" /> Reset Game
+                  <Trash2 className="h-5 w-5 shrink-0" /> Reset Game
                 </button>
               </div>
 
               <button 
                 onClick={() => setIsDebugOpen(false)}
-                className="mt-6 w-full rounded-2xl bg-gradient-to-r from-emerald-700 to-teal-800 py-4 font-bold text-white shadow-lg shadow-emerald-900/20"
+                className="mt-6 w-full rounded-2xl bg-gradient-to-r from-emerald-700 to-teal-800 py-4 text-base font-bold text-white shadow-lg shadow-emerald-900/20"
               >
                 Close
               </button>
@@ -1575,22 +1615,22 @@ export default function App() {
 
                 <h3 className="text-xl font-black text-gray-800 mb-1">{selectedSlimeDetail.name}</h3>
                 <div className="flex gap-2 mb-4">
-                  <span className="rounded-full bg-gradient-to-r from-violet-100 to-purple-100 px-2 py-0.5 text-[9px] font-black text-purple-700 uppercase">
+                  <span className="rounded-full bg-gradient-to-r from-violet-100 to-purple-100 px-2 py-0.5 text-[9px] font-black text-purple-700">
                     Level {selectedSlimeDetail.level}
                   </span>
-                  <span className="rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 py-0.5 text-[9px] font-black text-emerald-700 uppercase">
+                  <span className="rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
                     {selectedSlimeDetail.trait}
                   </span>
                 </div>
 
                 <div className="mb-4 w-full space-y-4 rounded-[2rem] border border-emerald-100/60 bg-gradient-to-b from-emerald-50/80 to-orange-50/30 p-4">
                   <div className="text-center mb-1">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Coin field trait</p>
+                    <p className="text-[9px] font-black text-gray-400 tracking-widest leading-none mb-1">Coin field trait</p>
                     <p className="text-xs font-bold text-gray-600 italic">"{TRAIT_EFFECTS[selectedSlimeDetail.trait].description}"</p>
                   </div>
 
                   <div className="text-center border-t border-emerald-100/80 pt-3">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Arena ability</p>
+                    <p className="text-[9px] font-black text-gray-400 tracking-widest leading-none mb-1">Arena ability</p>
                     <p className="text-xs font-black text-violet-800">
                       {ARENA_ABILITY_META[selectedSlimeDetail.arenaAbility].name}
                     </p>
@@ -1616,7 +1656,7 @@ export default function App() {
                   </div>
 
                   <div className="text-center pt-1">
-                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-[0.15em] border-t border-gray-100 pt-2 mb-2">Tap a row to upgrade</p>
+                    <p className="text-[8px] font-black text-gray-400 tracking-[0.15em] border-t border-gray-100 pt-2 mb-2">Tap a row to upgrade</p>
                   </div>
                       {/* Stat upgrades: horizontal rows, upgrade on the right */}
                       <div className="flex flex-col gap-2">
@@ -1629,7 +1669,7 @@ export default function App() {
                           <div className="flex min-w-0 flex-1 items-center gap-3">
                             <div className="shrink-0 text-red-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Heart className="h-6 w-6" /></div>
                             <div className="min-w-0">
-                              <div className="text-[9px] font-black uppercase leading-none text-red-400 group-disabled:text-zinc-500">HP UP</div>
+                              <div className="text-xs font-black leading-none text-red-400 group-disabled:text-zinc-500">Health up</div>
                               <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
                                 <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.health}</span>
                                 <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
@@ -1640,8 +1680,10 @@ export default function App() {
                             </div>
                           </div>
                           <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
-                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰</div>
+                            <div className="text-xs font-black tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-sm font-black tabular-nums text-white group-disabled:text-red-600">
+                              {SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.health)}💰
+                            </div>
                           </div>
                         </button>
                         <button 
@@ -1653,7 +1695,7 @@ export default function App() {
                           <div className="flex min-w-0 flex-1 items-center gap-3">
                             <div className="shrink-0 text-orange-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Sword className="h-6 w-6" /></div>
                             <div className="min-w-0">
-                              <div className="text-[9px] font-black uppercase leading-none text-orange-400 group-disabled:text-zinc-500">STR UP</div>
+                              <div className="text-xs font-black leading-none text-orange-400 group-disabled:text-zinc-500">Strength up</div>
                               <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
                                 <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.strength}</span>
                                 <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
@@ -1664,8 +1706,10 @@ export default function App() {
                             </div>
                           </div>
                           <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
-                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰</div>
+                            <div className="text-xs font-black tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-sm font-black tabular-nums text-white group-disabled:text-red-600">
+                              {SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.strength)}💰
+                            </div>
                           </div>
                         </button>
                         <button 
@@ -1677,7 +1721,7 @@ export default function App() {
                           <div className="flex min-w-0 flex-1 items-center gap-3">
                             <div className="shrink-0 text-blue-500 transition-transform group-active:scale-110 group-disabled:text-zinc-500"><Wind className="h-6 w-6" /></div>
                             <div className="min-w-0">
-                              <div className="text-[9px] font-black uppercase leading-none text-blue-400 group-disabled:text-zinc-500">AGI UP</div>
+                              <div className="text-xs font-black leading-none text-blue-400 group-disabled:text-zinc-500">Agility up</div>
                               <div className="mt-0.5 flex items-baseline gap-0.5 font-black tabular-nums leading-none">
                                 <span className="text-lg text-zinc-800 group-disabled:text-zinc-700">{selectedSlimeDetail.stats.agility}</span>
                                 <ChevronRight className="mx-px h-4 w-4 shrink-0 self-center text-zinc-400" aria-hidden />
@@ -1688,8 +1732,10 @@ export default function App() {
                             </div>
                           </div>
                           <div className="shrink-0 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-3 py-2 text-center shadow-sm group-disabled:border-zinc-300 group-disabled:from-zinc-200 group-disabled:to-zinc-300">
-                            <div className="text-[8px] font-black uppercase tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
-                            <div className="text-xs font-black text-white group-disabled:text-zinc-800">{SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰</div>
+                            <div className="text-xs font-black tracking-wide text-white/95 group-disabled:text-zinc-600">Upgrade</div>
+                            <div className="text-sm font-black tabular-nums text-white group-disabled:text-red-600">
+                              {SLIME_UPGRADE_COST(selectedSlimeDetail.statLevels.agility)}💰
+                            </div>
                           </div>
                         </button>
                       </div>
@@ -1700,7 +1746,7 @@ export default function App() {
                         onClick={() => {
                           toggleEquipSlime(selectedSlimeDetail.id);
                         }}
-                        className={`w-full rounded-xl py-3 text-xs font-black tracking-widest transition-all ${
+                        className={`w-full rounded-xl py-3 text-sm font-black tracking-widest transition-all ${
                           state.equippedSlimeIds.includes(selectedSlimeDetail.id)
                           ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md hover:brightness-105'
                           : 'btn-primary-glow shadow-md'
@@ -1835,10 +1881,10 @@ export default function App() {
                               onClick={startHatching}
                               className="btn-primary-glow animate-pulse rounded-full px-4 py-1.5 text-[9px] font-black"
                             >
-                              HATCH NOW
+                              Hatch now
                             </button>
                           ) : (
-                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">No Eggs to Hatch</span>
+                            <span className="text-[9px] font-black text-gray-400 tracking-widest">No eggs to hatch</span>
                           )}
                         </div>
                       </div>
@@ -1920,7 +1966,7 @@ export default function App() {
                                   transition={{ repeat: Infinity, duration: 0.8 }}
                                   className="text-yellow-900 font-extrabold text-sm drop-shadow-md select-none tracking-widest"
                                >
-                                  POKE!
+                                  Poke!
                                </motion.span>
                             </div>
                           </div>
@@ -1932,7 +1978,7 @@ export default function App() {
                               animate={{ width: `${state.hatchingEgg.progress}%` }}
                             />
                           </div>
-                          <p className="mt-0.5 text-[8px] font-black text-emerald-700 uppercase tracking-tighter">{state.hatchingEgg.progress}% Hatched</p>
+                          <p className="mt-0.5 text-[8px] font-black text-emerald-700 tracking-tighter">{state.hatchingEgg.progress}% hatched</p>
                         </div>
                       </div>
                     )}
@@ -1944,19 +1990,25 @@ export default function App() {
                       type="button"
                       onClick={() => buyEgg(1)}
                       disabled={state.coins < EGG_COST}
-                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                      className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
-                      <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 1</span>
-                      <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">{EGG_COST} 💰</span>
+                      <span className="inline-flex items-baseline justify-center gap-4 whitespace-nowrap text-sm font-black leading-tight tracking-wide text-white/95 group-disabled:text-zinc-700">
+                        <span>Buy x1</span>
+                        <span className="text-base tabular-nums text-white/95 group-disabled:text-red-600">{EGG_COST} 💰</span>
+                      </span>
                     </button>
                     <button 
                       type="button"
                       onClick={() => buyEgg(10)}
-                      disabled={state.coins < EGG_COST * 10}
-                      className="ui-afford-disabled group flex flex-1 flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                      disabled={state.coins < EGG_BULK_10_COST}
+                      className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
-                      <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">Buy 10</span>
-                      <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">{EGG_COST * 10} 💰</span>
+                      <span className="inline-flex items-baseline justify-center gap-4 whitespace-nowrap text-sm font-black leading-tight tracking-wide text-white/95 group-disabled:text-zinc-700">
+                        <span>Buy x10</span>
+                        <span className="text-base tabular-nums text-white/95 group-disabled:text-red-600">
+                          {EGG_BULK_10_COST} 💰
+                        </span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -1965,12 +2017,12 @@ export default function App() {
               {/* Lower Half: Collection Overview */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-gray-800 uppercase">
-                    <Ghost className="h-4 w-4 text-emerald-600" /> My Collection ({state.slimes.length})
+                  <h3 className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-gray-800">
+                    <Ghost className="h-4 w-4 text-emerald-600" /> My collection ({state.slimes.length})
                   </h3>
                   <div className="flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-100 to-orange-100 px-2 py-0.5 ring-1 ring-orange-200/60">
-                    <span className="text-[8px] font-black text-emerald-800 uppercase">Equipped</span>
-                    <p className="text-[9px] font-black text-orange-800 uppercase">
+                    <span className="text-[8px] font-black text-emerald-800">Equipped</span>
+                    <p className="text-[9px] font-black text-orange-800">
                       {state.equippedSlimeIds.length}/{MAX_EQUIPPED_SLIMES}
                     </p>
                   </div>
@@ -1993,7 +2045,7 @@ export default function App() {
                       <Ghost className="h-12 w-12 text-emerald-200" />
                       <div>
                         <p className="text-gray-400 font-medium">No slimes yet.</p>
-                        <p className="text-[10px] text-gray-400 mt-1 uppercase font-black">Buy and hatch your first egg!</p>
+                        <p className="text-[10px] text-gray-400 mt-1 font-black">Buy and hatch your first egg!</p>
                       </div>
                     </div>
                   )}
@@ -2078,18 +2130,24 @@ export default function App() {
                                 {slime.name}
                               </div>
 
-                              <div className="mt-0.5 grid grid-cols-3 gap-0">
-                                <div className="flex flex-col items-center">
-                                  <Heart className="h-2 w-2 text-red-400" />
-                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.health}</span>
+                              <div className="mt-0.5 flex w-full items-center justify-center gap-1.5 px-0.5">
+                                <div className="inline-flex items-center gap-0.5">
+                                  <Heart className="h-2.5 w-2.5 shrink-0 text-red-500" />
+                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                                    {slime.stats.health}
+                                  </span>
                                 </div>
-                                <div className="flex flex-col items-center">
-                                  <Sword className="h-2 w-2 text-orange-400" />
-                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.strength}</span>
+                                <div className="inline-flex items-center gap-0.5">
+                                  <Sword className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                                    {slime.stats.strength}
+                                  </span>
                                 </div>
-                                <div className="flex flex-col items-center">
-                                  <Wind className="h-2 w-2 text-blue-400" />
-                                  <span className="text-[6px] font-black text-gray-500">{slime.stats.agility}</span>
+                                <div className="inline-flex items-center gap-0.5">
+                                  <Wind className="h-2.5 w-2.5 shrink-0 text-blue-500" />
+                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
+                                    {slime.stats.agility}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -2120,12 +2178,18 @@ export default function App() {
                         type="button"
                         onClick={breedSlimes}
                         disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                        className="ui-afford-disabled group flex w-full flex-col items-center justify-center rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                        className="ui-afford-disabled group flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                       >
-                        <span className="text-[8px] uppercase text-white/95 group-disabled:text-zinc-700">
+                        <span className="text-sm uppercase leading-tight text-white/95 group-disabled:text-zinc-700">
                           Breed Slimes
                         </span>
-                        <span className="text-[10px] font-black tabular-nums group-disabled:text-zinc-900">
+                        <span
+                          className={`text-base font-black tabular-nums leading-tight ${
+                            breedingSelection.length === 2 && state.coins < BREEDING_COST
+                              ? 'text-red-600'
+                              : 'text-white/95 group-disabled:text-zinc-800'
+                          }`}
+                        >
                           {BREEDING_COST.toLocaleString()} 💰
                         </span>
                       </button>
@@ -2186,11 +2250,6 @@ export default function App() {
         }
       >
         <NavButton 
-          active={state.activeTab === 'game'} 
-          onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
-          icon={<CircleDollarSign />}
-        />
-        <NavButton 
           active={state.activeTab === 'slimes'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'slimes' }))}
           icon={<Ghost />}
@@ -2200,6 +2259,11 @@ export default function App() {
           active={state.activeTab === 'market'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
           icon={<Dna />}
+        />
+        <NavButton 
+          active={state.activeTab === 'game'} 
+          onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
+          icon={<CircleDollarSign />}
         />
         <NavButton 
           active={state.activeTab === 'slimeMarket'} 
@@ -2357,12 +2421,18 @@ export default function App() {
 
 function NavButton({ active, onClick, icon, hasNotification }: { active: boolean, onClick: () => void, icon: React.ReactNode, hasNotification?: boolean }) {
   return (
-    <button 
+    <button
       type="button"
       onClick={onClick}
-      className={`pointer-events-auto relative flex flex-col items-center gap-1 rounded-2xl p-2 transition-all ${active ? 'text-emerald-800' : 'text-gray-400'}`}
+      className="pointer-events-auto relative flex flex-col items-center gap-1 rounded-2xl p-2 transition-all active:scale-[0.97]"
     >
-      <div className={`rounded-xl p-2.5 transition-all ${active ? 'ui-emerald-outline bg-gradient-to-br from-emerald-100 to-orange-100 shadow-sm' : ''}`}>
+      <div
+        className={
+          active
+            ? 'rounded-xl p-2.5 transition-all border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-700/25 ring-2 ring-emerald-500/45'
+            : 'ui-emerald-outline rounded-xl p-2.5 transition-all bg-gradient-to-br from-emerald-100 to-orange-100 text-emerald-800/90 shadow-sm hover:from-emerald-50 hover:to-amber-50/90'
+        }
+      >
         {React.cloneElement(icon as React.ReactElement, { className: 'w-8 h-8' })}
       </div>
       {hasNotification && (
@@ -2401,6 +2471,7 @@ function GameUpgradeRow({
   statSubtitle,
 }: GameUpgradeRowProps) {
   const lockedOut = !canAfford || maxed;
+  const showRedCost = !maxed && !canAfford;
   return (
     <div className="rounded-lg border border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 p-1.5 shadow-sm">
       <div className="flex items-start justify-between gap-1.5">
@@ -2433,7 +2504,16 @@ function GameUpgradeRow({
                 : 'border border-orange-200 bg-gradient-to-b from-orange-50 to-amber-50 text-orange-800 shadow-sm active:scale-95'
           }`}
         >
-          {maxed ? 'Owned' : `${cost.toLocaleString()} 💰`}
+          {maxed ? (
+            'Owned'
+          ) : showRedCost ? (
+            <span>
+              <span className="text-red-600 tabular-nums">{cost.toLocaleString()}</span>
+              <span> 💰</span>
+            </span>
+          ) : (
+            `${cost.toLocaleString()} 💰`
+          )}
         </button>
         <button
           type="button"
@@ -2490,39 +2570,40 @@ const SlimeCard: React.FC<{
       )}
       {!detailSeen && (
         <span
-          className="pointer-events-none absolute -left-0.5 -top-0.5 z-20 h-2.5 w-2.5 rounded-full bg-red-500 shadow-md ring-2 ring-white"
+          className="pointer-events-none absolute -right-0.5 -top-0.5 z-20 h-2.5 w-2.5 rounded-full bg-red-500 shadow-md ring-2 ring-white"
           aria-hidden
         />
       )}
-      <div className="relative mb-2">
-        <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
+      <div className="relative mb-1">
+        <SlimeStackSprite slime={slime} size="lg" className="shadow-inner" />
       </div>
       <h4 className="font-bold text-gray-800 text-[10px] mb-0.5 text-center truncate w-full px-1">
         {slime.name}
       </h4>
-      <div className="w-full grid grid-cols-3 gap-0.5 mb-2 mt-1 px-1">
-        <div className="flex flex-col items-center">
-          <Heart className="w-2.5 h-2.5 text-red-500" />
-          <span className="text-[8px] font-black">{slime.stats.health}</span>
+      <div className="mb-1.5 mt-0.5 flex w-full items-center justify-center gap-1.5 px-0.5">
+        <div className="inline-flex items-center gap-0.5">
+          <Heart className="h-2.5 w-2.5 shrink-0 text-red-500" />
+          <span className="text-[8px] font-black tabular-nums leading-none">{slime.stats.health}</span>
         </div>
-        <div className="flex flex-col items-center">
-          <Sword className="w-2.5 h-2.5 text-orange-500" />
-          <span className="text-[8px] font-black">{slime.stats.strength}</span>
+        <div className="inline-flex items-center gap-0.5">
+          <Sword className="h-2.5 w-2.5 shrink-0 text-orange-500" />
+          <span className="text-[8px] font-black tabular-nums leading-none">{slime.stats.strength}</span>
         </div>
-        <div className="flex flex-col items-center">
-          <Wind className="w-2.5 h-2.5 text-blue-500" />
-          <span className="text-[8px] font-black">{slime.stats.agility}</span>
+        <div className="inline-flex items-center gap-0.5">
+          <Wind className="h-2.5 w-2.5 shrink-0 text-blue-500" />
+          <span className="text-[8px] font-black tabular-nums leading-none">{slime.stats.agility}</span>
         </div>
       </div>
       <button 
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           onEquip(slime.id);
         }}
-        className={`w-full rounded-lg py-1.5 text-[8px] font-black uppercase transition-all ${
+        className={`w-full min-h-7 rounded-lg py-1 text-[10px] font-black tracking-wide transition-all ${
           isEquipped 
-          ? 'bg-gradient-to-r from-orange-400 to-amber-500 text-white shadow-sm' 
-          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm ring-1 ring-orange-300/50 hover:brightness-105' 
+          : 'btn-primary-glow shadow-sm ring-1 ring-emerald-400/30'
         }`}
       >
         {isEquipped ? 'Equipped' : 'Equip'}
@@ -2560,7 +2641,7 @@ function StatBadge({ icon, value, label }: StatBadgeProps) {
     <div className="bg-gray-50 p-2 rounded-xl flex flex-col items-center">
       <div className="text-gray-400 mb-1">{icon}</div>
       <div className="text-xs font-bold text-gray-800">{value}</div>
-      <div className="text-[8px] font-black text-gray-400 uppercase">{label}</div>
+      <div className="text-[8px] font-black text-gray-400">{label}</div>
     </div>
   );
 }

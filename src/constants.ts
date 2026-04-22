@@ -6,7 +6,7 @@ import {
   SlimeStats,
   SlimeTrait,
 } from './types';
-import { rollNewSlimeVisuals, visualsFromSlimeId } from './slimeSprites';
+import { rollNewSlimeVisuals } from './slimeSprites';
 
 /** Google Play listing (same id as `capacitor.config.ts` appId). */
 export const PLAY_STORE_LISTING_URL =
@@ -149,22 +149,14 @@ export const MAX_EQUIPPED_SLIMES = 3;
 /** Arena: both player and enemy teams field this many slimes. */
 export const ARENA_TEAM_SIZE = 4;
 
-/** Arena battle: energy orbs fill the ability bar; one use when it reaches full. */
-export const ARENA_ENERGY_PER_ORB = 0.26;
-export const ARENA_ENERGY_ORBS_PER_SIDE = 5;
-
 /**
  * Arena fight length multiplier. Outcome is computed from slime stats / encounter only — not this value —
- * so tuning time here does not change who wins.
- * Orb respawn and ability VFX duration scale with this so pacing stays similar across a longer fight.
+ * so tuning time here does not change who wins. Ability VFX duration scales with this.
  */
 export const ARENA_BATTLE_TIME_SCALE = 2;
 
 const ARENA_BATTLE_DURATION_BASE_MS = 5500;
-const ARENA_ENERGY_RESPAWN_BASE_MS = 1100;
 const ARENA_ABILITY_PROC_BASE_MS = 700;
-
-export const ARENA_ENERGY_RESPAWN_MS = ARENA_ENERGY_RESPAWN_BASE_MS * ARENA_BATTLE_TIME_SCALE;
 /** Fade duration for ability-use VFX after the bar fires. */
 export const ARENA_ABILITY_PROC_MS = ARENA_ABILITY_PROC_BASE_MS * ARENA_BATTLE_TIME_SCALE;
 /** How long the arena battle canvas runs before the outcome resolves (ms). */
@@ -341,21 +333,26 @@ export type ArenaEnemyDisplay = {
   agility: number;
 };
 
+/** `s_Slime5` — red/coral body; used for all arena enemies (vector fallback + sprite). */
+export const ARENA_ENEMY_SLIME_BODY = 5;
+/** Vector fallback and trait VFX tint when the sprite stack is not drawn. */
+export const ARENA_ENEMY_SLIME_COLOR = '#b91c1c';
+
 export function generateArenaEnemyTeam(encounter: ArenaEncounter): ArenaEnemyDisplay[] {
   const r = arenaRand(encounter.seed + 99_001);
   const first = ['Gloom', 'Vex', 'Rune', 'Mire', 'Frost', 'Ember', 'Shard', 'Dusk'];
   const second = ['claw', 'fang', 'mire', 'veil', 'puff', 'wisp', 'gloom', 'shade'];
-  const colors = ['#6d28d9', '#b91c1c', '#0d9488', '#c026d3', '#2563eb', '#ca8a04', '#4b5563'];
   const abilities: SlimeArenaAbility[] = ['Rally', 'Fortify', 'Smash', 'Rush', 'Harmony'];
   return Array.from({ length: ARENA_TEAM_SIZE }, (_, i) => i).map((i) => {
     const a = r() > 0.15 ? abilities[Math.floor(r() * abilities.length)]! : 'None';
     const id = `arena-enemy-${encounter.seed}-${i}`;
-    const vis = visualsFromSlimeId(id);
     return {
       id,
       name: `${first[Math.floor(r() * first.length)]!} ${second[Math.floor(r() * second.length)]!}`,
-      color: colors[Math.floor(r() * colors.length)]!,
-      ...vis,
+      color: ARENA_ENEMY_SLIME_COLOR,
+      slimeBody: ARENA_ENEMY_SLIME_BODY,
+      slimeEyes: 0,
+      slimeAccessory: 0,
       ability: a,
       agility: 5 + Math.floor(r() * 16),
     };
@@ -555,8 +552,15 @@ export function migrateMaxUnlockedToSandFlowerOrder(oldMax: number): number {
   return Math.min(5, maxNew);
 }
 
-/** Slightly easier first egg than the old 100 so new players reach collection loop sooner. */
-export const EGG_COST = 85;
+/** Price per single egg. */
+export const EGG_COST = 50;
+/** 10-egg bundle (cheaper per egg than 10 × EGG_COST). */
+export const EGG_BULK_10_COST = 450;
+
+export function eggPurchaseCost(amount: number): number {
+  if (amount === 10) return EGG_BULK_10_COST;
+  return EGG_COST * amount;
+}
 
 /** Coins required to breed two slimes (market tab). */
 export const BREEDING_COST = 500;
