@@ -238,7 +238,6 @@ function drawGroundTrailParticles(ctx: CanvasRenderingContext2D, particles: Grou
 
 interface GameWorldProps {
   onCollect: (count: number) => void;
-  automationLevel: number;
   movementSpeedLevel: number;
   respawnTimeLevel: number;
   equippedSlimes: Slime[];
@@ -484,7 +483,6 @@ function drawWorldDecoration(
 
 export const GameWorld: React.FC<GameWorldProps> = ({
   onCollect,
-  automationLevel,
   movementSpeedLevel,
   respawnTimeLevel,
   equippedSlimes,
@@ -683,20 +681,6 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       if (dist > 2) {
         moveDir = { x: dx / dist, y: dy / dist };
         joystickSpeedMult = Math.min(dist / maxRadius, 1);
-      }
-    } else if (automationLevel > 0 && coinsRef.current.length > 0) {
-      // Simple AI: move to nearest coin
-      const nearest = coinsRef.current.reduce((prev, curr) => {
-        const distPrev = Math.hypot(prev.x - playerRef.current.x, prev.y - playerRef.current.y);
-        const distCurr = Math.hypot(curr.x - playerRef.current.x, curr.y - playerRef.current.y);
-        return distCurr < distPrev ? curr : prev;
-      });
-
-      const dx = nearest.x - playerRef.current.x;
-      const dy = nearest.y - playerRef.current.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 2) {
-        moveDir = { x: dx / dist, y: dy / dist };
       }
     }
 

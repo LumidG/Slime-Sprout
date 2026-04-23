@@ -238,9 +238,6 @@ export default function App() {
 
   // Notification Logic
   const canAffordAnyGameUpgrade =
-    (!isGameUpgradeMaxed(state.upgrades, 'automation') &&
-      state.upgrades.automation === 0 &&
-      state.coins >= UPGRADE_COSTS.automation) ||
     (!isGameUpgradeMaxed(state.upgrades, 'movementSpeed') &&
       state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'respawnTime') &&
@@ -422,6 +419,17 @@ export default function App() {
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [hasStarted, isLoading]);
+
+  // Auto-grant automation when the player equips their first slime.
+  useEffect(() => {
+    if (isLoading) return;
+    if (state.equippedSlimeIds.length > 0 && state.upgrades.automation === 0) {
+      setState(prev => ({
+        ...prev,
+        upgrades: { ...prev.upgrades, automation: 1 },
+      }));
+    }
+  }, [isLoading, state.equippedSlimeIds.length, state.upgrades.automation]);
 
   // Maxing all game-tab upgrades unlocks the next world (and resets upgrades for the next tier).
   useEffect(() => {
@@ -1654,7 +1662,6 @@ export default function App() {
                   <GameWorld
                     worldIndex={state.gameWorldIndex}
                     onCollect={handleGameCollect}
-                    automationLevel={state.upgrades.automation}
                     movementSpeedLevel={state.upgrades.movementSpeed}
                     respawnTimeLevel={state.upgrades.respawnTime}
                     equippedSlimes={state.slimes.filter((s) =>
@@ -2219,29 +2226,6 @@ export default function App() {
                     canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
                     onPurchase={() => buyUpgrade('coinValue')}
                     maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue')}
-                  />
-                  <GameUpgradeRow
-                    title="Automation"
-                    description="Earn coins while away or in the background."
-                    level={state.upgrades.automation}
-                    maxLevel={1}
-                    currentStat={
-                      state.upgrades.automation > 0
-                        ? 'On'
-                        : 'Off'
-                    }
-                    nextStat={
-                      state.upgrades.automation > 0
-                        ? 'MAX'
-                        : `~${computeOfflineIdleGain(
-                            { automation: 1, respawnTime: state.upgrades.respawnTime, coinValue: state.upgrades.coinValue },
-                            60 * 60 * 1000
-                          ).currencyEarned.toLocaleString()} 💰/hr`
-                    }
-                    cost={state.upgrades.automation > 0 ? 0 : UPGRADE_COSTS.automation}
-                    canAfford={state.upgrades.automation === 0 && state.coins >= UPGRADE_COSTS.automation}
-                    onPurchase={() => buyUpgrade('automation')}
-                    maxed={state.upgrades.automation > 0}
                   />
                   </div>
                   <div
