@@ -254,6 +254,8 @@ interface GameWorldProps {
   insetLeftForWorldNav?: boolean;
   /** Wider horizontal inset when the next-world chevron is shown */
   insetRightForWorldNav?: boolean;
+  /** When true, no coins spawn and existing coins are cleared (completed-level view). */
+  disableCoins?: boolean;
 }
 
 /**
@@ -472,6 +474,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   worldIndex,
   insetLeftForWorldNav = false,
   insetRightForWorldNav = false,
+  disableCoins = false,
 }) => {
   const theme = GAME_WORLDS[Math.min(GAME_WORLDS.length - 1, Math.max(0, worldIndex))];
   const containerRef = useRef<HTMLDivElement>(null);
@@ -487,7 +490,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     radius: 15,
   });
   const slimesRef = useRef<
-    Record<string, { x: number; y: number; targetId?: number; moveDist: number; walkPhase: number }>
+    Record<string, { x: number; y: number; targetId?: number; moveDist: number; walkPhase: number; wanderTarget?: { x: number; y: number } }>
   >({});
   const coinsRef = useRef<Coin[]>([]);
   const lastRespawnRef = useRef<number>(0);
@@ -574,9 +577,17 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
   };
 
+  // Clear all coins immediately when entering a completed level.
+  useEffect(() => {
+    if (disableCoins) {
+      coinsRef.current = [];
+    }
+  }, [disableCoins]);
+
   // Match on-screen coin count to coin cap upgrade (2, 4, 6, …); trim or spawn as level changes.
   // Coins are in static world coordinates — no dependency on viewport or nav insets.
   useEffect(() => {
+    if (disableCoins) return;
     const cap = onScreenCoinCap(coinCapLevel);
     while (coinsRef.current.length > cap) {
       coinsRef.current.pop();
@@ -585,7 +596,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       const { x, y } = randomWorldCoinPosition();
       coinsRef.current.push({ id: nextCoinId.current++, x, y, scale: 1 });
     }
-  }, [coinCapLevel]);
+  }, [coinCapLevel, disableCoins]);
 
   const respawnInterval = gameRespawnIntervalMs(respawnTimeLevel);
 
@@ -695,9 +706,27 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       const finalSlimeSpeed = gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel) * (1 + (slime.stats.agility / 20)) * (1 + selfSpeedBuff) * (1 + globalSlimeSpeedBuff);
 
       let sMoveDir = { x: 0, y: 0 };
-      
-      // Target finding with random persistence
-      if (coinsRef.current.length > 0) {
+
+      if (disableCoins) {
+        // Completed level: slimes roam freely across the walkable area
+        const wt = sPos.wanderTarget;
+        const needsTarget = !wt || Math.hypot(wt.x - sPos.x, wt.y - sPos.y) < 18;
+        if (needsTarget) {
+          sPos.wanderTarget = {
+            x: WALKABLE_ORIGIN_X + WORLD_EDGE_INSET + Math.random() * (WALKABLE_WIDTH - WORLD_EDGE_INSET * 2),
+            y: WALKABLE_ORIGIN_Y + WORLD_EDGE_INSET + Math.random() * (WALKABLE_HEIGHT - WORLD_EDGE_INSET * 2),
+          };
+        }
+        if (sPos.wanderTarget) {
+          const dx = sPos.wanderTarget.x - sPos.x;
+          const dy = sPos.wanderTarget.y - sPos.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 2) {
+            sMoveDir = { x: dx / dist, y: dy / dist };
+          }
+        }
+      } else if (coinsRef.current.length > 0) {
+        // Active level: chase coins
         let target = coinsRef.current.find(c => c.id === sPos.targetId);
         
         if (!target) {
@@ -845,18 +874,20 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       }
     });
 
-    if (collectedIds.length > 0) {
+    if (!disableCoins && collectedIds.length > 0) {
       coinsRef.current = coinsRef.current.filter((f) => !collectedIds.includes(f.id));
       onCollect(collectedIds.length);
     }
 
     // Respawn logic — coins spawn anywhere inside the static world bounds
-    const now = Date.now();
-    const screenCoinCap = onScreenCoinCap(coinCapLevel);
-    if (coinsRef.current.length < screenCoinCap && now - lastRespawnRef.current > respawnInterval) {
-      const { x: rx, y: ry } = randomWorldCoinPosition();
-      coinsRef.current.push({ id: nextCoinId.current++, x: rx, y: ry, scale: 0 });
-      lastRespawnRef.current = now;
+    if (!disableCoins) {
+      const now = Date.now();
+      const screenCoinCap = onScreenCoinCap(coinCapLevel);
+      if (coinsRef.current.length < screenCoinCap && now - lastRespawnRef.current > respawnInterval) {
+        const { x: rx, y: ry } = randomWorldCoinPosition();
+        coinsRef.current.push({ id: nextCoinId.current++, x: rx, y: ry, scale: 0 });
+        lastRespawnRef.current = now;
+      }
     }
 
     // Update Effects

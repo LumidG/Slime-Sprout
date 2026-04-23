@@ -63,6 +63,8 @@ export interface GameState {
     respawnTime: number;
     coinValue: number;
     coinCap: number;
+    /** Slime Cap tier (0–17): each tier adds +1 equip slot above the base 3. */
+    slimeCap: number;
   };
 
   // Slimes
@@ -70,12 +72,24 @@ export interface GameState {
   /** Slime ids whose detail modal has been opened at least once (persists). */
   slimeDetailSeenIds: string[];
   equippedSlimeIds: string[];
+  /** Rare currency used for breeding. Earned from arena wins. */
+  tickets: number;
+
   eggs: number;
   hatchingEgg: {
     progress: number;
     startTime: number;
   } | null;
   newlyHatchedSlime: Slime | null;
+
+  /**
+   * Active breeding egg that the player must tap to hatch.
+   * Set when breeding is initiated; cleared once progress reaches 100.
+   */
+  breedingEgg: {
+    progress: number;
+    pendingSlime: Slime;
+  } | null;
 
   /**
    * Slime id → timestamp (ms) when arena **ability** cooldown ends (after using an ability in battle).
@@ -127,13 +141,16 @@ export const INITIAL_STATE: GameState = {
     respawnTime: 1,
     coinValue: 1,
     coinCap: 1,
+    slimeCap: 0,
   },
   slimes: [],
   slimeDetailSeenIds: [],
   equippedSlimeIds: [],
+  tickets: 0,
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
+  breedingEgg: null,
   slimeArenaAbilityCooldownUntil: {},
   arenaWins: 0,
   activeTab: 'game',

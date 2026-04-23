@@ -33,6 +33,8 @@ import {
   Swords,
   Vibrate,
   Lock,
+  Ticket,
+  CheckCircle2,
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
@@ -45,6 +47,7 @@ import {
   EGG_BULK_10_COST,
   eggPurchaseCost,
   BREEDING_COST,
+  BREEDING_COST_TICKETS,
   SLIME_UPGRADE_COST,
   SLIME_STAT_UPGRADE_DELTA,
   computeOfflineIdleGain,
@@ -52,6 +55,7 @@ import {
   SLIME_NAMES,
   TRAIT_EFFECTS,
   MAX_EQUIPPED_SLIMES,
+  equippedSlimeCapAtLevel,
   PLAY_STORE_LISTING_URL,
   SUPPORT_MAILTO,
   GAME_WORLDS,
@@ -59,7 +63,7 @@ import {
   migrateMaxUnlockedToSandThirdOrder,
   GAME_WORLD_INDEX_MIGRATE_SAND_FLOWER_SWAP,
   migrateMaxUnlockedToSandFlowerOrder,
-  MAX_GAME_UPGRADE_LEVEL,
+  getMaxGameUpgradeLevelForWorld,
   areAllGameUpgradesMaxed,
   isGameUpgradeMaxed,
   onScreenCoinCap,
@@ -133,7 +137,8 @@ export default function App() {
   const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [selectedSlimeDetail, setSelectedSlimeDetail] = useState<Slime | null>(null);
-  const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
+  const [breedingSelection, setBreedingSelection] = useState<[string | null, string | null]>([null, null]);
+  const [activeBreedingSlot, setActiveBreedingSlot] = useState<0 | 1>(0);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   /** Short GPU translate when changing world; avoids remounting GameWorld (was causing heavy lag). */
@@ -155,6 +160,8 @@ export default function App() {
   } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** Timestamp when the player navigated away from the game tab (within-session idle tracking). */
+  const lastGameTabExitTimeRef = useRef<number | null>(null);
 
   /** Re-render once per second so arena/collection cooldown timers stay accurate. */
   const [, setCooldownClock] = useState(0);
@@ -178,6 +185,11 @@ export default function App() {
 
   useEffect(() => {
     if (state.activeTab !== 'arena') setArenaBattleActive(false);
+  }, [state.activeTab]);
+
+  // Reset breeding slot to 0 whenever the player opens the breeding tab.
+  useEffect(() => {
+    if (state.activeTab === 'market') setActiveBreedingSlot(0);
   }, [state.activeTab]);
 
   // Fake loading hides when progress hits 100%, but we must clear this flag so world-unlock logic and saves run.
@@ -249,11 +261,15 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
       state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'coinCap') &&
-      state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap));
+      state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'slimeCap') &&
+      state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap));
   
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
   const isGameTab = state.activeTab === 'game';
+  /** True when the player is viewing a world they've already beaten (index < max unlocked). */
+  const isCompletedLevel = state.gameWorldIndex < state.maxUnlockedGameWorld;
   /** Arena fight overlay is z-[115]; raise header/options above it so the menu stays reachable mid-fight. */
   const shellOverArenaFight =
     state.activeTab === 'arena' && arenaBattleActive;
@@ -315,26 +331,31 @@ export default function App() {
         parsed.gameWorldIndex = parsed.maxUnlockedGameWorld;
       }
       if (parsed.upgrades) {
+        const loadCaps = getMaxGameUpgradeLevelForWorld(parsed.gameWorldIndex ?? 0);
         parsed.upgrades.automation = parsed.upgrades.automation > 0 ? 1 : 0;
         parsed.upgrades.movementSpeed = Math.min(
-          MAX_GAME_UPGRADE_LEVEL.movementSpeed,
+          loadCaps.movementSpeed,
           Math.max(1, Math.floor(Number(parsed.upgrades.movementSpeed)) || 1)
         );
         parsed.upgrades.slimeMovementSpeed = Math.min(
-          MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed,
+          loadCaps.slimeMovementSpeed,
           Math.max(1, Math.floor(Number(parsed.upgrades.slimeMovementSpeed)) || 1)
         );
         parsed.upgrades.respawnTime = Math.min(
-          MAX_GAME_UPGRADE_LEVEL.respawnTime,
+          loadCaps.respawnTime,
           Math.max(1, Math.floor(Number(parsed.upgrades.respawnTime)) || 1)
         );
         parsed.upgrades.coinValue = Math.min(
-          MAX_GAME_UPGRADE_LEVEL.coinValue,
+          loadCaps.coinValue,
           Math.max(1, Math.floor(Number(parsed.upgrades.coinValue)) || 1)
         );
         parsed.upgrades.coinCap = Math.min(
-          MAX_GAME_UPGRADE_LEVEL.coinCap,
+          loadCaps.coinCap,
           Math.max(1, Math.floor(Number(parsed.upgrades.coinCap)) || 1)
+        );
+        parsed.upgrades.slimeCap = Math.min(
+          loadCaps.slimeCap,
+          Math.max(0, Math.floor(Number(parsed.upgrades.slimeCap)) || 0)
         );
       }
 
@@ -358,6 +379,13 @@ export default function App() {
       if (!validTabs.has(parsed.activeTab)) {
         parsed.activeTab = 'game';
       }
+      if (typeof parsed.tickets !== 'number' || !Number.isFinite(parsed.tickets) || parsed.tickets < 0) {
+        parsed.tickets = 0;
+      } else {
+        parsed.tickets = Math.floor(parsed.tickets);
+      }
+      if (parsed.breedingEgg === undefined) parsed.breedingEgg = null;
+
       delete parsed.slimeCooldownUntil;
       if (!parsed.slimeArenaAbilityCooldownUntil || typeof parsed.slimeArenaAbilityCooldownUntil !== 'object') {
         parsed.slimeArenaAbilityCooldownUntil = {};
@@ -417,6 +445,10 @@ export default function App() {
       const idleGain = computeOfflineIdleGain(prev.upgrades, diff);
       if (idleGain.currencyEarned <= 0) return;
 
+      // Reset tab-exit timer so the tab-switch handler doesn't double-count
+      // the same period that this visibility handler just credited.
+      lastGameTabExitTimeRef.current = now;
+
       setOfflineWelcome({
         currencyEarned: idleGain.currencyEarned,
         awayMs: diff,
@@ -434,6 +466,79 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [hasStarted, isLoading]);
 
+  /**
+   * Background idle while navigating between in-app tabs.
+   * The GameWorld canvas only runs on the 'game' tab, so when the player switches
+   * away we record the departure time and silently credit idle coins on return.
+   */
+  useEffect(() => {
+    if (isLoading || !hasStarted) return;
+
+    if (state.activeTab !== 'game') {
+      // Record when we first left the game tab (don't overwrite if already set).
+      if (lastGameTabExitTimeRef.current === null) {
+        lastGameTabExitTimeRef.current = Date.now();
+      }
+    } else {
+      // Returned to the game tab — credit any remaining idle time since the last
+      // background tick (at most one tick interval worth of time).
+      if (lastGameTabExitTimeRef.current !== null) {
+        const now = Date.now();
+        const awayMs = now - lastGameTabExitTimeRef.current;
+        lastGameTabExitTimeRef.current = null;
+
+        if (awayMs >= 1000) {
+          const prev = stateRef.current;
+          const idleGain = computeOfflineIdleGain(prev.upgrades, awayMs);
+          if (idleGain.currencyEarned > 0) {
+            setState((s) => ({
+              ...s,
+              coins: s.coins + idleGain.currencyEarned,
+              totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+              lastSavedTime: now,
+            }));
+          }
+        }
+      }
+    }
+  }, [state.activeTab, isLoading, hasStarted]);
+
+  /**
+   * Real-time silent idle accumulation while the player is on a non-game tab.
+   * Ticks every 5 seconds, credits idle coins without playing any sound, and
+   * advances lastGameTabExitTimeRef so the return-to-game handler only needs
+   * to cover the remaining partial interval.
+   */
+  useEffect(() => {
+    if (isLoading || !hasStarted || state.activeTab === 'game') return;
+
+    const TICK_MS = 5000;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const since = lastGameTabExitTimeRef.current;
+      if (since === null) return;
+
+      const elapsed = now - since;
+      if (elapsed < 1000) return;
+
+      lastGameTabExitTimeRef.current = now;
+
+      const prev = stateRef.current;
+      const idleGain = computeOfflineIdleGain(prev.upgrades, elapsed);
+      if (idleGain.currencyEarned <= 0) return;
+
+      setState((s) => ({
+        ...s,
+        coins: s.coins + idleGain.currencyEarned,
+        totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+        lastSavedTime: now,
+      }));
+    }, TICK_MS);
+
+    return () => clearInterval(interval);
+  }, [isLoading, hasStarted, state.activeTab]);
+
   // Auto-grant automation when the player equips their first slime.
   useEffect(() => {
     if (isLoading) return;
@@ -448,7 +553,7 @@ export default function App() {
   // Maxing all game-tab upgrades unlocks the next world (and resets upgrades for the next tier).
   useEffect(() => {
     if (isLoading) return;
-    if (!areAllGameUpgradesMaxed(state.upgrades)) {
+    if (!areAllGameUpgradesMaxed(state.upgrades, state.gameWorldIndex)) {
       gameUpgradeMaxedUnlockRef.current = false;
       return;
     }
@@ -463,10 +568,11 @@ export default function App() {
     });
 
     setState((prev) => {
-      if (!areAllGameUpgradesMaxed(prev.upgrades)) return prev;
+      if (!areAllGameUpgradesMaxed(prev.upgrades, prev.gameWorldIndex)) return prev;
       if (prev.maxUnlockedGameWorld >= 5) return prev;
       return {
         ...prev,
+        coins: 0,
         maxUnlockedGameWorld: prev.maxUnlockedGameWorld + 1,
         gameWorldIndex: prev.maxUnlockedGameWorld + 1,
         upgrades: { ...INITIAL_STATE.upgrades },
@@ -528,11 +634,6 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!offlineWelcome || !hasStarted) return;
-    playCoinCollect(Math.min(5, Math.max(1, Math.ceil(offlineWelcome.idleCoins / 20))));
-  }, [offlineWelcome, hasStarted, playCoinCollect]);
-
-  useEffect(() => {
     if (!worldUnlockCelebration || !hasStarted) return;
     playCoinCollect(6);
   }, [worldUnlockCelebration, hasStarted, playCoinCollect]);
@@ -554,8 +655,9 @@ export default function App() {
           equippedSlimeIds: prev.equippedSlimeIds.filter(i => i !== id)
         };
       } else {
-        if (prev.equippedSlimeIds.length >= MAX_EQUIPPED_SLIMES) {
-          // Maybe show a toast or just swap? Let's swap the first one for simplicity or just block
+        const slotCap = equippedSlimeCapAtLevel(prev.upgrades.slimeCap);
+        if (prev.equippedSlimeIds.length >= slotCap) {
+          // Swap out the oldest equipped slime
           return {
             ...prev,
             equippedSlimeIds: [...prev.equippedSlimeIds.slice(1), id]
@@ -570,7 +672,7 @@ export default function App() {
   };
 
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
-    if (isGameUpgradeMaxed(state.upgrades, key)) return;
+    if (isGameUpgradeMaxed(state.upgrades, key, state.gameWorldIndex)) return;
     const currentLevel = state.upgrades[key];
     const cost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
     
@@ -584,6 +686,28 @@ export default function App() {
         }
       }));
     }
+  };
+
+  const buyUpgradeMax = (key: keyof GameState['upgrades']) => {
+    setState(prev => {
+      if (isGameUpgradeMaxed(prev.upgrades, key, prev.gameWorldIndex)) return prev;
+      if (key === 'automation') {
+        if (prev.coins < UPGRADE_COSTS.automation) return prev;
+        return { ...prev, coins: prev.coins - UPGRADE_COSTS.automation, upgrades: { ...prev.upgrades, automation: 1 } };
+      }
+      const caps = getMaxGameUpgradeLevelForWorld(prev.gameWorldIndex);
+      const cap = caps[key as keyof typeof caps];
+      let level = prev.upgrades[key];
+      let coins = prev.coins;
+      while (level < cap) {
+        const cost = (UPGRADE_COSTS as any)[key](level);
+        if (coins < cost) break;
+        coins -= cost;
+        level++;
+      }
+      if (level === prev.upgrades[key]) return prev;
+      return { ...prev, coins, upgrades: { ...prev.upgrades, [key]: level } };
+    });
   };
 
   const buyEgg = (amount: number = 1) => {
@@ -718,17 +842,17 @@ export default function App() {
   };
 
   const breedSlimes = () => {
-    if (breedingSelection.length !== 2) return;
     const id1 = breedingSelection[0];
     const id2 = breedingSelection[1];
+    if (!id1 || !id2) return;
     const s1 = state.slimes.find(s => s.id === id1);
     const s2 = state.slimes.find(s => s.id === id2);
-    if (!s1 || !s2 || state.coins < BREEDING_COST) return;
+    if (!s1 || !s2 || (state.tickets ?? 0) < BREEDING_COST_TICKETS) return;
 
-    const newSlime: Slime = {
+    const pendingSlime: Slime = {
       id: Math.random().toString(36).substr(2, 9),
       name: getUniqueName(state.slimes),
-      color: s1.color, // Could mix colors
+      color: s1.color,
       ...breedSlimeVisuals(withSlimeVisualDefaults(s1), withSlimeVisualDefaults(s2)),
       stats: {
         health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
@@ -745,20 +869,55 @@ export default function App() {
 
     setState(prev => ({
       ...prev,
-      coins: prev.coins - BREEDING_COST,
-      slimes: [...prev.slimes, newSlime],
-      newlyHatchedSlime: newSlime
+      tickets: (prev.tickets ?? 0) - BREEDING_COST_TICKETS,
+      breedingEgg: { progress: 0, pendingSlime },
     }));
-    setBreedingSelection([]);
-    setState(s => ({ ...s, activeSubTab: 'collect' }));
+    setBreedingSelection([null, null]);
+    setActiveBreedingSlot(0);
   };
 
-  const toggleBreedingSelection = (id: string) => {
-    setBreedingSelection(prev => {
-      if (prev.includes(id)) return prev.filter(i => i !== id);
-      if (prev.length >= 2) return [prev[1], id];
-      return [...prev, id];
+  const pokeBreedingEgg = () => {
+    setState(prev => {
+      if (!prev.breedingEgg) return prev;
+      const newProgress = prev.breedingEgg.progress + 10;
+      if (newProgress >= 100) {
+        const newSlime = prev.breedingEgg.pendingSlime;
+        return {
+          ...prev,
+          breedingEgg: null,
+          slimes: [...prev.slimes, newSlime],
+          newlyHatchedSlime: newSlime,
+        };
+      }
+      return {
+        ...prev,
+        breedingEgg: { ...prev.breedingEgg, progress: newProgress },
+      };
     });
+  };
+
+  const handleBreedingSlotClick = (index: 0 | 1) => {
+    setActiveBreedingSlot(index);
+  };
+
+  const selectBreedingParent = (slimeId: string) => {
+    const slot = activeBreedingSlot;
+    const isAlreadySelected = breedingSelection[0] === slimeId || breedingSelection[1] === slimeId;
+
+    setBreedingSelection(prev => {
+      const next: [string | null, string | null] = [prev[0], prev[1]];
+      // Tapping an already-equipped slime unequips it from whichever slot it's in.
+      if (next[0] === slimeId) { next[0] = null; return next; }
+      if (next[1] === slimeId) { next[1] = null; return next; }
+      // Otherwise assign to the active slot.
+      next[slot] = slimeId;
+      return next;
+    });
+
+    // After a fresh assignment, auto-advance to the other slot.
+    if (!isAlreadySelected) {
+      setActiveBreedingSlot(slot === 0 ? 1 : 0);
+    }
   };
 
   const handleArenaBattleEnd = useCallback(
@@ -776,6 +935,8 @@ export default function App() {
           coins += encounter.rewardCoins;
         }
         const arenaWins = won ? (prev.arenaWins ?? 0) + 1 : (prev.arenaWins ?? 0);
+        const ticketsEarned = won && arenaWins % 3 === 0 ? 1 : 0;
+        const tickets = (prev.tickets ?? 0) + ticketsEarned;
         if (arenaAbilityUserIds.length > 0) {
           const t = Date.now();
           slimeArenaAbilityCooldownUntil = { ...prev.slimeArenaAbilityCooldownUntil };
@@ -788,7 +949,7 @@ export default function App() {
             }
           }
         }
-        return { ...prev, coins, slimeArenaAbilityCooldownUntil, arenaWins };
+        return { ...prev, coins, tickets, slimeArenaAbilityCooldownUntil, arenaWins };
       });
     },
     []
@@ -797,6 +958,10 @@ export default function App() {
   // Debug Actions
   const debugAddCoins = (amount: number) => {
     setState(prev => ({ ...prev, coins: prev.coins + amount }));
+  };
+
+  const debugAddTickets = (amount: number) => {
+    setState(prev => ({ ...prev, tickets: (prev.tickets ?? 0) + amount }));
   };
 
   const debugAddEggs = (amount: number) => {
@@ -812,17 +977,21 @@ export default function App() {
   };
 
   const debugUnlockAll = () => {
-    setState(prev => ({
-      ...prev,
-      upgrades: {
-        automation: 1,
-        movementSpeed: MAX_GAME_UPGRADE_LEVEL.movementSpeed,
-        slimeMovementSpeed: MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed,
-        respawnTime: MAX_GAME_UPGRADE_LEVEL.respawnTime,
-        coinValue: MAX_GAME_UPGRADE_LEVEL.coinValue,
-        coinCap: MAX_GAME_UPGRADE_LEVEL.coinCap,
-      }
-    }));
+    setState(prev => {
+      const caps = getMaxGameUpgradeLevelForWorld(prev.gameWorldIndex);
+      return {
+        ...prev,
+        upgrades: {
+          automation: 1,
+          movementSpeed: caps.movementSpeed,
+          slimeMovementSpeed: caps.slimeMovementSpeed,
+          respawnTime: caps.respawnTime,
+          coinValue: caps.coinValue,
+          coinCap: caps.coinCap,
+          slimeCap: caps.slimeCap,
+        },
+      };
+    });
   };
 
   /** Same outcome as maxing all game-tab upgrades: unlock next world, go there, reset upgrades. */
@@ -839,6 +1008,7 @@ export default function App() {
       );
       return {
         ...prev,
+        coins: 0,
         maxUnlockedGameWorld: nextIndex,
         gameWorldIndex: nextIndex,
         upgrades: { ...INITIAL_STATE.upgrades },
@@ -852,6 +1022,8 @@ export default function App() {
     setWorldNavTransition(false);
     setWorldNavShiftPx(delta * 28);
     setState((s) => ({ ...s, gameWorldIndex: next }));
+    // Close the upgrades panel when switching to a completed level
+    if (next < state.maxUnlockedGameWorld) setIsUpgradesOpen(false);
   };
 
   useLayoutEffect(() => {
@@ -997,7 +1169,7 @@ export default function App() {
       <div
         className={
           isGameTab
-            ? 'glass-header-game pointer-events-none absolute top-0 right-0 left-0 z-30 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
+            ? `glass-header-game pointer-events-none absolute top-0 right-0 left-0 ${isUpgradesOpen ? 'z-[55]' : 'z-30'} grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3`
             : shellOverArenaFight
               ? 'glass-header-page relative z-[125] grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
               : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
@@ -1015,17 +1187,25 @@ export default function App() {
         >
           <Bug className="h-4 w-4" />
         </button>
-        <div className="flex items-center justify-center gap-2">
-          <div
-            className={
-              isGameTab
-                ? 'ui-emerald-outline rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner'
-                : 'rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner ring-2 ring-orange-200/60'
-            }
-          >
-            <CircleDollarSign className="h-5 w-5 text-orange-700" />
+        <div className="flex items-center justify-center gap-5">
+          <div className="flex items-center gap-2">
+            <div
+              className={
+                isGameTab
+                  ? 'ui-emerald-outline rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner'
+                  : 'rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-2 shadow-inner ring-2 ring-orange-200/60'
+              }
+            >
+              <CircleDollarSign className="h-5 w-5 text-orange-700" />
+            </div>
+            <span className="text-xl font-bold tabular-nums text-emerald-950">{state.coins.toLocaleString()}</span>
           </div>
-          <span className="text-xl font-bold tabular-nums text-emerald-950">{state.coins.toLocaleString()}</span>
+          <div className="flex items-center gap-2">
+            <div className="rounded-full bg-gradient-to-br from-violet-100 to-purple-200 p-2 shadow-inner ring-2 ring-purple-200/50">
+              <Ticket className="h-5 w-5 text-purple-700" />
+            </div>
+            <span className="text-xl font-bold tabular-nums text-emerald-950">{(state.tickets ?? 0)}</span>
+          </div>
         </div>
         <button
           type="button"
@@ -1267,7 +1447,7 @@ export default function App() {
                 New area unlocked!
               </h2>
               <p className="mb-2 text-[11px] font-bold tabular-nums text-emerald-600/95">
-                Stage {worldUnlockCelebration.worldIndex + 1} of {GAME_WORLDS.length}
+                Stage {worldUnlockCelebration.worldIndex + 1}
               </p>
               <p className="mb-1 text-sm font-bold text-emerald-800/90">
                 Welcome to{' '}
@@ -1284,6 +1464,113 @@ export default function App() {
               >
                 Enter new level
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Breeding Egg Overlay — full-screen tap-to-hatch after breeding */}
+      <AnimatePresence>
+        {state.breedingEgg && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[112] flex cursor-pointer flex-col items-center justify-center gap-8 bg-black/85 p-6 text-center backdrop-blur-md"
+            onClick={pokeBreedingEgg}
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 24 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <div className="flex flex-col items-center gap-1">
+                <Dna className="mb-1 h-8 w-8 text-orange-400 drop-shadow-md" aria-hidden />
+                <h2 className="text-3xl font-black text-white drop-shadow-sm">Breeding!</h2>
+                <p className="text-sm font-bold text-white/60">Tap the egg to hatch your new slime</p>
+              </div>
+
+              {/* Egg */}
+              <motion.div
+                animate={{ scale: [1, 1.03, 1], rotate: [0, -1.5, 1.5, 0] }}
+                transition={{ repeat: Infinity, duration: 2.2 }}
+                whileTap={{ scale: 0.93, rotate: [-3, 3, 0] }}
+                className="relative flex items-center justify-center"
+                onClick={(e) => { e.stopPropagation(); pokeBreedingEgg(); }}
+              >
+                <div className="relative h-44 w-36 flex items-center justify-center">
+                  {/* Egg shell */}
+                  <div className="absolute w-32 h-44 bg-gradient-to-br from-yellow-50 to-yellow-200 border-4 border-yellow-500 rounded-[50%_50%_50%_50%/_60%_60%_40%_40%] shadow-[0_0_60px_rgba(250,204,21,0.4)] overflow-hidden">
+                    <div className="absolute top-6 left-6 w-7 h-12 bg-white/40 rounded-full blur-[3px] -rotate-12" />
+                  </div>
+
+                  {/* Crack SVG — same as hatching tab */}
+                  <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" viewBox="0 0 144 176">
+                    <g fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" stroke="#713F12">
+                      <motion.path
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{
+                          pathLength: state.breedingEgg.progress > 20 ? 1 : 0,
+                          opacity: state.breedingEgg.progress > 20 ? 1 : 0,
+                        }}
+                        d="M50,50 L56,62 L47,73 L61,84"
+                      />
+                      <motion.path
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{
+                          pathLength: state.breedingEgg.progress > 45 ? 1 : 0,
+                          opacity: state.breedingEgg.progress > 45 ? 1 : 0,
+                        }}
+                        d="M96,124 L85,113 L93,102 L79,91"
+                      />
+                      <motion.path
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{
+                          pathLength: state.breedingEgg.progress > 70 ? 1 : 0,
+                          opacity: state.breedingEgg.progress > 70 ? 1 : 0,
+                        }}
+                        d="M34,96 L45,107 L36,119 L51,130"
+                      />
+                      <motion.path
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{
+                          pathLength: state.breedingEgg.progress > 90 ? 1 : 0,
+                          opacity: state.breedingEgg.progress > 90 ? 1 : 0,
+                        }}
+                        d="M72,36 L68,57 L76,79 L72,102 L79,124"
+                        strokeWidth="3.5"
+                      />
+                    </g>
+                  </svg>
+
+                  {/* "Tap!" label */}
+                  <div className="relative z-20 flex items-center justify-center">
+                    <motion.span
+                      animate={{
+                        scale: [1, 1.06 + state.breedingEgg.progress / 500, 1],
+                        color: state.breedingEgg.progress > 80 ? ['#713F12', '#92400E', '#713F12'] : '#713F12',
+                      }}
+                      transition={{ repeat: Infinity, duration: 0.75 }}
+                      className="select-none text-base font-extrabold tracking-widest text-yellow-900 drop-shadow-md"
+                    >
+                      Tap!
+                    </motion.span>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Progress bar */}
+              <div className="flex w-56 flex-col items-center gap-2">
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/15 shadow-inner">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-lime-400 to-orange-400"
+                    animate={{ width: `${state.breedingEgg.progress}%` }}
+                    transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+                  />
+                </div>
+                <p className="text-xs font-black text-white/70">{state.breedingEgg.progress}% hatched</p>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -1416,6 +1703,8 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => debugAddCoins(1000)} className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 py-2 text-xs font-bold text-orange-800">+1k 💰</button>
                     <button onClick={() => debugAddCoins(10000)} className="rounded-xl bg-gradient-to-br from-amber-200 to-orange-200 py-2 text-xs font-bold text-orange-900">+10k 💰</button>
+                    <button onClick={() => debugAddTickets(5)} className="rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 py-2 text-xs font-bold text-purple-800">+5 🎟️</button>
+                    <button onClick={() => debugAddTickets(20)} className="rounded-xl bg-gradient-to-br from-violet-200 to-purple-200 py-2 text-xs font-bold text-purple-900">+20 🎟️</button>
                   </div>
                 </div>
 
@@ -1693,15 +1982,19 @@ export default function App() {
                       (state.gameWorldIndex === state.maxUnlockedGameWorld &&
                         state.maxUnlockedGameWorld < GAME_WORLDS.length - 1)
                     }
+                    disableCoins={isCompletedLevel}
                   />
                 </div>
 
-                <div className="pointer-events-none absolute left-1/2 top-game-world-label z-[35] -translate-x-1/2">
+                <div className="pointer-events-none absolute left-1/2 top-game-world-label z-[35] -translate-x-1/2 flex items-center gap-1.5">
                   <div className="ui-emerald-outline-soft rounded-full bg-emerald-950/25 px-3 py-1 shadow-sm backdrop-blur-md">
                     <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
                       {GAME_WORLDS[state.gameWorldIndex]?.name ?? GAME_WORLDS[0].name}
                     </span>
                   </div>
+                  {isCompletedLevel && (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-300 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]" strokeWidth={2.5} />
+                  )}
                 </div>
 
                 {state.gameWorldIndex > 0 && (
@@ -1918,7 +2211,7 @@ export default function App() {
                   <div className="flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-100 to-orange-100 px-2 py-0.5 ring-1 ring-orange-200/60">
                     <span className="text-[8px] font-black text-emerald-800">Equipped</span>
                     <p className="text-[9px] font-black text-orange-800">
-                      {state.equippedSlimeIds.length}/{MAX_EQUIPPED_SLIMES}
+                      {state.equippedSlimeIds.length}/{equippedSlimeCapAtLevel(state.upgrades.slimeCap)}
                     </p>
                   </div>
                 </div>
@@ -1965,57 +2258,69 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center justify-center gap-4 py-2">
-                      {[0, 1].map((index) => {
+                      {([0, 1] as const).map((index) => {
                         const selectedId = breedingSelection[index];
                         const slime = state.slimes.find((s) => s.id === selectedId);
+                        const isActive = activeBreedingSlot === index;
 
                         return (
-                          <div key={index} className="flex flex-col items-center gap-2">
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => handleBreedingSlotClick(index)}
+                            className="flex flex-col items-center gap-2"
+                          >
                             <div
-                              className={`flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
-                                slime
+                              className={`relative flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
+                                isActive
+                                  ? 'border-orange-400 bg-gradient-to-br from-orange-50 to-amber-50 shadow-lg shadow-orange-200/60 ring-2 ring-orange-300/60'
+                                  : slime
                                   ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50 shadow-md shadow-emerald-900/5'
-                                  : 'border-dashed border-emerald-200 bg-white/80'
+                                  : 'border-emerald-200 bg-white/80 shadow-sm'
                               }`}
                             >
                               {slime ? (
                                 <SlimeStackSprite slime={slime} size="lg" className="shadow-inner" />
                               ) : (
-                                <Plus className="h-6 w-6 text-gray-300" />
+                                <Plus className={`h-6 w-6 ${isActive ? 'text-orange-400' : 'text-gray-300'}`} />
                               )}
+                              {/* Slot number badge */}
+                              <div className={`absolute -top-1.5 -left-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-white text-[8px] font-black shadow ${isActive ? 'bg-orange-500 text-white' : 'bg-gray-300 text-white'}`}>
+                                {index + 1}
+                              </div>
                             </div>
-                            <div className="text-[9px] font-black uppercase tracking-tight text-gray-400">
+                            <div className={`text-[9px] font-black uppercase tracking-tight transition-colors ${isActive ? 'text-orange-500' : 'text-gray-400'}`}>
                               {slime ? slime.name : `Parent ${index + 1}`}
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
-                    {breedingSelection.length < 2 && (
-                      <motion.p
-                        animate={{ opacity: [0.45, 1, 0.45] }}
-                        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
-                        className="text-[10px] font-bold uppercase tracking-wider text-emerald-600/90"
-                      >
-                        select parents
-                      </motion.p>
-                    )}
+                    <motion.p
+                      key={activeBreedingSlot}
+                      animate={{ opacity: [0.5, 1, 0.5] }}
+                      transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+                      className="text-[10px] font-bold uppercase tracking-wider text-orange-500/90"
+                    >
+                      selecting parent {activeBreedingSlot + 1}
+                    </motion.p>
                   </div>
 
                   {/* Scrollable Selection List */}
                   <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
                     <div className="grid grid-cols-3 gap-2">
                       {state.slimes.map((slime) => {
-                        const isSelected = breedingSelection.includes(slime.id);
+                        const slotIndex = breedingSelection[0] === slime.id ? 0 : breedingSelection[1] === slime.id ? 1 : -1;
+                        const isSelected = slotIndex !== -1;
                         return (
                           <button
                             key={slime.id}
                             type="button"
-                            onClick={() => toggleBreedingSelection(slime.id)}
-                            className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
+                            onClick={() => selectBreedingParent(slime.id)}
+                            className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all active:scale-95 ${
                               isSelected
                                 ? 'border-orange-400 bg-gradient-to-b from-orange-100 to-amber-50 shadow-md ring-2 ring-orange-300/50'
-                                : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
+                                : 'border-emerald-50 bg-white shadow-sm hover:border-orange-200 hover:shadow-md'
                             }`}
                           >
                             <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
@@ -2047,9 +2352,10 @@ export default function App() {
                               </div>
                             </div>
 
+                            {/* Parent number badge — 1 or 2 in the top-right corner */}
                             {isSelected && (
-                              <div className="absolute right-1 top-1 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-gradient-to-br from-emerald-500 to-orange-500 text-[7px] font-black text-white shadow-md">
-                                {breedingSelection.indexOf(slime.id) + 1}
+                              <div className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-orange-500 text-[8px] font-black text-white shadow-md">
+                                {slotIndex + 1}
                               </div>
                             )}
                           </button>
@@ -2068,24 +2374,29 @@ export default function App() {
                   </div>
 
                   <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
-                    <div className="mx-auto flex w-full max-w-sm justify-center">
+                    <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-2">
+                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-purple-600/90">
+                        <Ticket className="h-3.5 w-3.5" aria-hidden />
+                        <span>Costs tickets — earn 1 every 3 arena wins</span>
+                      </div>
                       <button
                         type="button"
                         onClick={breedSlimes}
-                        disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                        className="ui-afford-disabled group flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                        disabled={!breedingSelection[0] || !breedingSelection[1] || (state.tickets ?? 0) < BREEDING_COST_TICKETS}
+                        className="ui-afford-disabled group flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-purple-500 bg-gradient-to-br from-violet-500 to-purple-600 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                       >
                         <span className="text-sm uppercase leading-tight text-white/95 group-disabled:text-zinc-700">
                           Breed Slimes
                         </span>
                         <span
-                          className={`text-base font-black tabular-nums leading-tight ${
-                            breedingSelection.length === 2 && state.coins < BREEDING_COST
-                              ? 'text-red-600'
+                          className={`flex items-center gap-1 text-base font-black tabular-nums leading-tight ${
+                            breedingSelection[0] && breedingSelection[1] && (state.tickets ?? 0) < BREEDING_COST_TICKETS
+                              ? 'text-red-300'
                               : 'text-white/95 group-disabled:text-zinc-800'
                           }`}
                         >
-                          {BREEDING_COST.toLocaleString()} 💰
+                          <Ticket className="h-4 w-4" aria-hidden />
+                          {BREEDING_COST_TICKETS} ticket
                         </span>
                       </button>
                     </div>
@@ -2120,8 +2431,8 @@ export default function App() {
       <div
         className={
           isGameTab
-            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-around gap-0.5 p-1.5 pb-nav-safe'
-            : 'glass-nav-page relative z-50 flex items-center justify-around gap-0.5 p-1.5 pb-nav-safe'
+            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-evenly p-1.5 pb-nav-safe'
+            : 'glass-nav-page relative z-50 flex items-center justify-evenly p-1.5 pb-nav-safe'
         }
       >
         <NavButton 
@@ -2148,13 +2459,13 @@ export default function App() {
       </div>
 
       {/* Game tab: upgrades HUD above bottom nav — z-50 so it paints over glass-nav (z-40) */}
-      {state.activeTab === 'game' && (
+      {state.activeTab === 'game' && !isCompletedLevel && (
         <>
           {!isUpgradesOpen && (
             <button
               type="button"
               onClick={() => setIsUpgradesOpen(true)}
-              className="game-hud-upgrade ui-emerald-outline pointer-events-auto absolute right-4 z-50 rounded-2xl bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
+              className="game-hud-upgrade ui-emerald-outline pointer-events-auto absolute right-3.5 z-50 rounded-2xl bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
             >
               <TrendingUp className="h-6 w-6" />
               {canAffordAnyGameUpgrade && (
@@ -2179,16 +2490,16 @@ export default function App() {
                   initial={{ y: 300, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: 300, opacity: 0 }}
-                  className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-4 left-4 z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl bg-gradient-to-b from-white/95 via-emerald-50/40 to-orange-50/50 p-3 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
+                  className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-1.5 left-1.5 z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl bg-gradient-to-b from-white/97 via-emerald-50/50 to-orange-50/60 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
                 >
-                <div className="mb-2 flex shrink-0 items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 text-sm font-bold text-emerald-900">
-                    <TrendingUp className="h-3.5 w-3.5 shrink-0 text-orange-500" /> Upgrades
+                <div className="mb-3 flex shrink-0 items-center justify-between">
+                  <h3 className="flex items-center gap-2 text-base font-black tracking-tight text-emerald-900">
+                    <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" /> Upgrades
                   </h3>
                   <button
                     type="button"
                     onClick={() => setIsUpgradesOpen(false)}
-                    className="text-emerald-400 transition-colors hover:text-orange-500"
+                    className="rounded-lg p-1 text-emerald-400 transition-colors hover:bg-emerald-50 hover:text-orange-500"
                   >
                     <ChevronRight className="h-5 w-5 rotate-90" />
                   </button>
@@ -2196,88 +2507,117 @@ export default function App() {
                 <div className="relative min-h-0 flex-1">
                   <div
                     ref={upgradesScrollRef}
-                    className="no-scrollbar flex max-h-full min-h-0 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-0.5 pb-0.5"
+                    className="no-scrollbar flex max-h-full min-h-0 flex-col gap-2.5 overflow-y-auto overscroll-contain pr-0.5 pb-1"
                   >
+                  {(() => {
+                    const worldCaps = getMaxGameUpgradeLevelForWorld(state.gameWorldIndex);
+                    return (
+                      <>
                   <GameUpgradeRow
                     title="Character speed"
                     description="Run faster and reach coins sooner."
                     level={state.upgrades.movementSpeed}
-                    maxLevel={MAX_GAME_UPGRADE_LEVEL.movementSpeed}
+                    maxLevel={worldCaps.movementSpeed}
                     currentStat={`${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed) / BASE_MOVEMENT_SPEED) * 100)}% speed`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'movementSpeed')
+                      isGameUpgradeMaxed(state.upgrades, 'movementSpeed', state.gameWorldIndex)
                         ? 'MAX'
                         : `${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed + 1) / BASE_MOVEMENT_SPEED) * 100)}% speed`
                     }
                     cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
                     canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
                     onPurchase={() => buyUpgrade('movementSpeed')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed')}
+                    onPurchaseMax={() => buyUpgradeMax('movementSpeed')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed', state.gameWorldIndex)}
                   />
                   <GameUpgradeRow
                     title="Slime speed"
                     description="Slimes move faster and collect coins sooner."
                     level={state.upgrades.slimeMovementSpeed}
-                    maxLevel={MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed}
+                    maxLevel={worldCaps.slimeMovementSpeed}
                     currentStat={`${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed) / BASE_SLIME_SPEED) * 100)}% speed`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed')
+                      isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed', state.gameWorldIndex)
                         ? 'MAX'
                         : `${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed + 1) / BASE_SLIME_SPEED) * 100)}% speed`
                     }
                     cost={UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
                     canAfford={state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
                     onPurchase={() => buyUpgrade('slimeMovementSpeed')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed')}
+                    onPurchaseMax={() => buyUpgradeMax('slimeMovementSpeed')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed', state.gameWorldIndex)}
                   />
                   <GameUpgradeRow
                     title="Coin respawn"
                     description="Shorten time between coin spawns."
                     level={state.upgrades.respawnTime}
-                    maxLevel={MAX_GAME_UPGRADE_LEVEL.respawnTime}
+                    maxLevel={worldCaps.respawnTime}
                     currentStat={`${(gameRespawnIntervalMs(state.upgrades.respawnTime) / 1000).toFixed(1)}s`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'respawnTime')
+                      isGameUpgradeMaxed(state.upgrades, 'respawnTime', state.gameWorldIndex)
                         ? 'MAX'
                         : `${(gameRespawnIntervalMs(state.upgrades.respawnTime + 1) / 1000).toFixed(1)}s`
                     }
                     cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
                     canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
                     onPurchase={() => buyUpgrade('respawnTime')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime')}
+                    onPurchaseMax={() => buyUpgradeMax('respawnTime')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime', state.gameWorldIndex)}
                   />
                   <GameUpgradeRow
                     title="Coin cap"
                     description="Increase the number of coins that can be on screen."
                     level={state.upgrades.coinCap}
-                    maxLevel={MAX_GAME_UPGRADE_LEVEL.coinCap}
+                    maxLevel={worldCaps.coinCap}
                     currentStat={`${onScreenCoinCap(state.upgrades.coinCap)} coins`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'coinCap')
+                      isGameUpgradeMaxed(state.upgrades, 'coinCap', state.gameWorldIndex)
                         ? 'MAX'
                         : `${onScreenCoinCap(state.upgrades.coinCap + 1)} coins`
                     }
                     cost={UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
                     canAfford={state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
                     onPurchase={() => buyUpgrade('coinCap')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinCap')}
+                    onPurchaseMax={() => buyUpgradeMax('coinCap')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinCap', state.gameWorldIndex)}
                   />
                   <GameUpgradeRow
                     title="Coin value"
                     description="More coins each time you collect."
                     level={state.upgrades.coinValue}
-                    maxLevel={MAX_GAME_UPGRADE_LEVEL.coinValue}
+                    maxLevel={worldCaps.coinValue}
                     currentStat={`${gameCoinValuePerCollect(state.upgrades.coinValue)} base 💰`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'coinValue')
+                      isGameUpgradeMaxed(state.upgrades, 'coinValue', state.gameWorldIndex)
                         ? 'MAX'
                         : `${gameCoinValuePerCollect(state.upgrades.coinValue + 1)} base 💰`
                     }
                     cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
                     canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
                     onPurchase={() => buyUpgrade('coinValue')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue')}
+                    onPurchaseMax={() => buyUpgradeMax('coinValue')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue', state.gameWorldIndex)}
                   />
+                  <GameUpgradeRow
+                    title="Slime cap"
+                    description="Equip more slimes to collect coins at once."
+                    level={state.upgrades.slimeCap}
+                    maxLevel={worldCaps.slimeCap}
+                    currentStat={`${equippedSlimeCapAtLevel(state.upgrades.slimeCap)} slimes`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'slimeCap', state.gameWorldIndex)
+                        ? 'MAX'
+                        : `${equippedSlimeCapAtLevel(state.upgrades.slimeCap + 1)} slimes`
+                    }
+                    cost={UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
+                    canAfford={state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
+                    onPurchase={() => buyUpgrade('slimeCap')}
+                    onPurchaseMax={() => buyUpgradeMax('slimeCap')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeCap', state.gameWorldIndex)}
+                  />
+                      </>
+                    );
+                  })()}
                   </div>
                   <div
                     className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 h-12 bg-gradient-to-t from-orange-50 via-orange-50/75 to-transparent transition-opacity duration-300 ease-out ${
@@ -2301,20 +2641,20 @@ function NavButton({ active, onClick, icon, hasNotification }: { active: boolean
     <button
       type="button"
       onClick={onClick}
-      className="pointer-events-auto relative flex flex-col items-center gap-1 rounded-2xl p-2 transition-all active:scale-[0.97]"
+      className="pointer-events-auto relative flex flex-1 flex-col items-center gap-1 rounded-2xl p-2 transition-all active:scale-[0.97]"
     >
       <div
         className={
           active
-            ? 'rounded-xl p-2.5 transition-all border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-700/25 ring-2 ring-emerald-500/45'
-            : 'ui-emerald-outline rounded-xl p-2.5 transition-all bg-gradient-to-br from-emerald-100 to-orange-100 text-emerald-800/90 shadow-sm hover:from-emerald-50 hover:to-amber-50/90'
+            ? 'relative rounded-xl p-2.5 transition-all border-2 border-emerald-400/90 bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-700/25 ring-2 ring-emerald-500/45'
+            : 'relative ui-emerald-outline rounded-xl p-2.5 transition-all bg-gradient-to-br from-emerald-100 to-orange-100 text-emerald-800/90 shadow-sm hover:from-emerald-50 hover:to-amber-50/90'
         }
       >
         {React.cloneElement(icon as React.ReactElement, { className: 'w-8 h-8' })}
+        {hasNotification && (
+          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />
+        )}
       </div>
-      {hasNotification && (
-        <div className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />
-      )}
     </button>
   );
 }
@@ -2329,6 +2669,7 @@ interface GameUpgradeRowProps {
   cost: number;
   canAfford: boolean;
   onPurchase: () => void;
+  onPurchaseMax: () => void;
   maxed?: boolean;
   /** Extra line (e.g. on-field cap) shown under the description */
   statSubtitle?: string;
@@ -2344,49 +2685,48 @@ function GameUpgradeRow({
   cost,
   canAfford,
   onPurchase,
+  onPurchaseMax,
   maxed,
   statSubtitle,
 }: GameUpgradeRowProps) {
   const lockedOut = !canAfford || maxed;
   const showRedCost = !maxed && !canAfford;
   return (
-    <div className="rounded-lg border border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/50 p-1.5 shadow-sm">
-      <div className="flex items-start justify-between gap-1.5">
-        <h4 className="text-[10px] font-bold uppercase leading-tight tracking-wide text-emerald-900">{title}</h4>
-        <div className="shrink-0 rounded border border-orange-200/70 bg-orange-50/90 px-1.5 py-px text-[8px] font-black tabular-nums leading-none text-orange-700 shadow-sm">
-          LEVEL {level}/{maxLevel}
+    <div className="rounded-xl border border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/60 p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-black uppercase leading-tight tracking-wide text-emerald-900">{title}</h4>
+        <div className="shrink-0 rounded-md border border-orange-200/70 bg-orange-50/90 px-2 py-0.5 text-[10px] font-black tabular-nums leading-none text-orange-700 shadow-sm">
+          {level} / {maxLevel}
         </div>
       </div>
-      <p className="mt-0.5 text-[9px] font-medium leading-tight text-zinc-600">{description}</p>
+      <p className="mt-1 text-[10px] font-medium leading-snug text-zinc-500">{description}</p>
       {statSubtitle != null && statSubtitle !== '' && (
-        <p className="mt-px text-[8px] font-semibold leading-tight text-zinc-500">{statSubtitle}</p>
+        <p className="mt-0.5 text-[9px] font-semibold leading-tight text-zinc-400">{statSubtitle}</p>
       )}
-      <div className="mt-1 flex items-center justify-between gap-1.5 rounded-md border border-emerald-100/90 bg-zinc-50/90 px-2 py-1 text-[10px] font-bold tabular-nums leading-tight">
-        <span className="min-w-0 truncate text-zinc-800">{currentStat}</span>
-        <span className="shrink-0 text-zinc-400" aria-hidden>
-          &gt;
-        </span>
-        <span className="min-w-0 truncate text-right text-orange-600">{nextStat}</span>
+      <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-100/90 bg-white/80 px-3 py-1.5 text-xs font-bold tabular-nums leading-tight">
+        <span className="min-w-0 truncate text-zinc-700">{currentStat}</span>
+        <span className="shrink-0 text-zinc-300" aria-hidden>→</span>
+        <span className="min-w-0 truncate text-right font-black text-orange-600">{nextStat}</span>
       </div>
-      <div className="mt-1 flex gap-1.5">
+      <div className="mt-2 flex gap-2">
         <button
           type="button"
           onClick={onPurchase}
           disabled={lockedOut}
-          className={`min-w-0 flex-[4] rounded-md py-1.5 text-center text-[10px] font-black leading-tight tracking-wide transition-all ${
+          className={`min-w-0 flex-1 rounded-lg py-2 text-center text-xs font-black leading-tight tracking-wide transition-all active:scale-[0.98] ${
             maxed
-              ? 'cursor-default border border-zinc-200 bg-zinc-100 text-zinc-500'
+              ? 'cursor-default border border-zinc-200 bg-zinc-100 text-zinc-400'
               : lockedOut
-                ? 'ui-afford-disabled cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-500'
-                : 'border border-orange-200 bg-gradient-to-b from-orange-50 to-amber-50 text-orange-800 shadow-sm active:scale-95'
+                ? 'ui-afford-disabled cursor-not-allowed border border-zinc-200 bg-zinc-100 text-zinc-400'
+                : 'btn-primary-glow'
           }`}
         >
           {maxed ? (
             'Owned'
           ) : showRedCost ? (
             <span>
-              <span className="text-red-600 tabular-nums">{cost.toLocaleString()}</span>
-              <span> 💰</span>
+              <span className="text-red-400 tabular-nums">{cost.toLocaleString()}</span>
+              <span className="text-zinc-400"> 💰</span>
             </span>
           ) : (
             `${cost.toLocaleString()} 💰`
@@ -2394,13 +2734,16 @@ function GameUpgradeRow({
         </button>
         <button
           type="button"
-          disabled
-          className={`flex w-11 shrink-0 flex-col items-center justify-center rounded-md border px-0.5 py-1.5 text-[8px] font-black uppercase leading-none shadow-sm ${
+          onClick={onPurchaseMax}
+          disabled={maxed || !canAfford}
+          className={`flex flex-1 flex-col items-center justify-center rounded-lg border py-2 text-[9px] font-black uppercase leading-none shadow-sm transition-all active:scale-[0.98] ${
             maxed
-              ? 'border-orange-300/80 bg-gradient-to-b from-orange-100 to-amber-100 text-orange-900'
-              : 'cursor-default border-zinc-200 bg-zinc-100/90 text-zinc-500'
+              ? 'cursor-default border-orange-400/60 bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-1 ring-orange-300/50'
+              : canAfford
+                ? 'border-orange-400/60 bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-1 ring-orange-300/50 hover:brightness-105'
+                : 'cursor-default border-zinc-200 bg-zinc-100/90 text-zinc-400'
           }`}
-          title={maxed ? 'At maximum level' : `Max level: ${maxLevel}`}
+          title={maxed ? 'At maximum level' : canAfford ? 'Buy as many levels as you can afford' : `Max level: ${maxLevel}`}
         >
           MAX
         </button>

@@ -95,8 +95,8 @@ export function gameCoinValuePerCollect(coinValueTier: number): number {
 }
 
 /** How much shorter the spawn interval gets after the next respawn upgrade. */
-export function gameRespawnNextIntervalReductionMs(currentLevel: number): number {
-  if (currentLevel >= MAX_GAME_UPGRADE_LEVEL.respawnTime) return 0;
+export function gameRespawnNextIntervalReductionMs(currentLevel: number, maxLevel = MAX_GAME_UPGRADE_LEVEL.respawnTime): number {
+  if (currentLevel >= maxLevel) return 0;
   return gameRespawnIntervalMs(currentLevel) - gameRespawnIntervalMs(currentLevel + 1);
 }
 
@@ -165,7 +165,13 @@ export const TRAIT_EFFECTS: Record<SlimeTrait, {
   Frenzy: { description: 'Burst: Team moves 60% faster for 5s!', slimeSpeed: 0.6 },
 };
 
+/** Base equipped-slime slots before any Slime Cap upgrades. */
 export const MAX_EQUIPPED_SLIMES = 3;
+
+/** Equipped-slime slot count at a given Slime Cap upgrade level. Level 0 = 3, each level +1, max 20. */
+export function equippedSlimeCapAtLevel(slimeCapLevel: number): number {
+  return MAX_EQUIPPED_SLIMES + Math.max(0, Math.floor(slimeCapLevel));
+}
 
 /** Arena: both player and enemy teams field this many slimes. */
 export const ARENA_TEAM_SIZE = 4;
@@ -466,16 +472,50 @@ export const UPGRADE_COSTS = {
   coinValue: (level: number) => Math.max(1, Math.floor((level + 1) / 2)),
   /** Cost for the next coin cap tier (+2 coins on screen per tier). */
   coinCap: (level: number) => Math.floor(15 * Math.pow(1.4, level)),
+  /**
+   * Slime Cap: +1 equip slot per tier (base 3 → up to 20), 17 tiers total.
+   * Intentionally the most expensive upgrade — roughly doubles each tier.
+   */
+  slimeCap: (level: number) => Math.floor(200 * Math.pow(1.5, level)),
 };
 
-/** Caps for shop upgrades on the game tab (automation is 0/1). */
+/** Caps for shop upgrades on the game tab (automation is 0/1). World 0 (first level) baseline. */
 export const MAX_GAME_UPGRADE_LEVEL = {
   movementSpeed: 20,
   slimeMovementSpeed: 20,
   respawnTime: 20,
   coinValue: 20,
   coinCap: 10,
+  /** 17 tiers: base 3 slots + 17 = 20 max equipped slimes. */
+  slimeCap: 17,
 } as const;
+
+export type GameUpgradeLevelCaps = {
+  movementSpeed: number;
+  slimeMovementSpeed: number;
+  respawnTime: number;
+  coinValue: number;
+  coinCap: number;
+  slimeCap: number;
+};
+
+/**
+ * Per-world upgrade caps. Index matches `gameWorldIndex` (0–5).
+ * Each world's caps are reached to unlock the next world.
+ */
+export const MAX_GAME_UPGRADE_LEVEL_BY_WORLD: readonly GameUpgradeLevelCaps[] = [
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 35, coinValue: 35, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+];
+
+/** Returns the upgrade caps for a given world index (falls back to world-0 caps if out of range). */
+export function getMaxGameUpgradeLevelForWorld(worldIndex: number): GameUpgradeLevelCaps {
+  return MAX_GAME_UPGRADE_LEVEL_BY_WORLD[worldIndex] ?? MAX_GAME_UPGRADE_LEVEL;
+}
 
 export type GameUpgradeSnapshot = {
   automation: number;
@@ -484,24 +524,29 @@ export type GameUpgradeSnapshot = {
   respawnTime: number;
   coinValue: number;
   coinCap: number;
+  slimeCap: number;
 };
 
 export function isGameUpgradeMaxed(
   upgrades: GameUpgradeSnapshot,
-  key: keyof GameUpgradeSnapshot
+  key: keyof GameUpgradeSnapshot,
+  worldIndex = 0
 ): boolean {
   if (key === 'automation') return upgrades.automation > 0;
-  return upgrades[key] >= MAX_GAME_UPGRADE_LEVEL[key as keyof typeof MAX_GAME_UPGRADE_LEVEL];
+  const caps = getMaxGameUpgradeLevelForWorld(worldIndex);
+  return upgrades[key] >= caps[key as keyof typeof caps];
 }
 
-export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot): boolean {
+export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot, worldIndex = 0): boolean {
+  const caps = getMaxGameUpgradeLevelForWorld(worldIndex);
   return (
     upgrades.automation > 0 &&
-    upgrades.movementSpeed >= MAX_GAME_UPGRADE_LEVEL.movementSpeed &&
-    upgrades.slimeMovementSpeed >= MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed &&
-    upgrades.respawnTime >= MAX_GAME_UPGRADE_LEVEL.respawnTime &&
-    upgrades.coinValue >= MAX_GAME_UPGRADE_LEVEL.coinValue &&
-    upgrades.coinCap >= MAX_GAME_UPGRADE_LEVEL.coinCap
+    upgrades.movementSpeed >= caps.movementSpeed &&
+    upgrades.slimeMovementSpeed >= caps.slimeMovementSpeed &&
+    upgrades.respawnTime >= caps.respawnTime &&
+    upgrades.coinValue >= caps.coinValue &&
+    upgrades.coinCap >= caps.coinCap &&
+    upgrades.slimeCap >= caps.slimeCap
   );
 }
 
@@ -592,8 +637,11 @@ export function eggPurchaseCost(amount: number): number {
   return EGG_COST * amount;
 }
 
-/** Coins required to breed two slimes (market tab). */
+/** Coins required to breed two slimes (market tab). @deprecated Breeding now costs tickets. */
 export const BREEDING_COST = 500;
+
+/** Tickets required to breed two slimes. One ticket is awarded every 3 arena wins. */
+export const BREEDING_COST_TICKETS = 1;
 
 export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.8, level));
 
