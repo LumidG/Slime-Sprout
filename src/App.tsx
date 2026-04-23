@@ -39,10 +39,12 @@ import {
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
 import { SlimeArenaPanel } from './components/SlimeArenaPanel';
+import { LevelCompletionBar } from './components/LevelCompletionBar';
 import { 
   COLORS, 
   TRAITS, 
   UPGRADE_COSTS, 
+  LEVEL_GOALS,
   EGG_COST,
   EGG_BULK_10_COST,
   eggPurchaseCost,
@@ -395,6 +397,17 @@ export default function App() {
       } else {
         parsed.arenaWins = Math.floor(parsed.arenaWins);
       }
+      if (typeof parsed.worldCoinsCollected !== 'number' || !Number.isFinite(parsed.worldCoinsCollected) || parsed.worldCoinsCollected < 0) {
+        parsed.worldCoinsCollected = 0;
+      } else {
+        parsed.worldCoinsCollected = Math.floor(parsed.worldCoinsCollected);
+      }
+      if (!Array.isArray(parsed.worldGoalsClaimed) || parsed.worldGoalsClaimed.length !== 5) {
+        parsed.worldGoalsClaimed = [false, false, false, false, false];
+      } else {
+        parsed.worldGoalsClaimed = parsed.worldGoalsClaimed.map(Boolean) as [boolean, boolean, boolean, boolean, boolean];
+      }
+
       if (!Array.isArray(parsed.slimeDetailSeenIds)) {
         parsed.slimeDetailSeenIds = Array.isArray(parsed.slimes)
           ? parsed.slimes.map((s: Slime) => s.id)
@@ -576,6 +589,8 @@ export default function App() {
         maxUnlockedGameWorld: prev.maxUnlockedGameWorld + 1,
         gameWorldIndex: prev.maxUnlockedGameWorld + 1,
         upgrades: { ...INITIAL_STATE.upgrades },
+        worldCoinsCollected: 0,
+        worldGoalsClaimed: [false, false, false, false, false],
       };
     });
   }, [
@@ -613,10 +628,14 @@ export default function App() {
       });
 
       const totalValuePerCoin = upgradeValue + traitBonus;
+      const isActiveWorld = prev.gameWorldIndex >= prev.maxUnlockedGameWorld;
       return {
         ...prev,
         coins: prev.coins + count * totalValuePerCoin,
-        totalCoinsCollected: prev.totalCoinsCollected + count
+        totalCoinsCollected: prev.totalCoinsCollected + count,
+        worldCoinsCollected: isActiveWorld
+          ? (prev.worldCoinsCollected ?? 0) + count
+          : (prev.worldCoinsCollected ?? 0),
       };
     });
   }, []);
@@ -645,6 +664,56 @@ export default function App() {
     },
     [addCoins, playCoinCollect]
   );
+
+  const handleClaimGoal = useCallback((goalIndex: number) => {
+    const goal = LEVEL_GOALS[goalIndex];
+    if (!goal) return;
+    playCoinCollect(goal.rewardTickets + (goal.rewardEggs ? 2 : 0) + (goal.rewardSlime ? 4 : 0));
+    setState((prev) => {
+      const newGoalsClaimed = [...prev.worldGoalsClaimed] as [boolean, boolean, boolean, boolean, boolean];
+      newGoalsClaimed[goalIndex] = true;
+
+      let newSlimes = prev.slimes;
+      let newlyHatched: Slime | null = prev.newlyHatchedSlime;
+      if (goal.rewardSlime) {
+        const usedNames = new Set(prev.slimes.map((s) => s.name));
+        const availableNames = SLIME_NAMES.filter((n) => !usedNames.has(n));
+        const slimeName =
+          availableNames.length > 0
+            ? availableNames[Math.floor(Math.random() * availableNames.length)]
+            : SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)];
+        const rewardSlime: Slime = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: slimeName,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)],
+          ...rollNewSlimeVisuals(),
+          stats: {
+            health: 10 + Math.floor(Math.random() * 10),
+            strength: 5 + Math.floor(Math.random() * 5),
+            agility: 5 + Math.floor(Math.random() * 5),
+          },
+          statLevels: { health: 1, strength: 1, agility: 1 },
+          trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+          arenaAbility: rollRandomArenaAbility(),
+          level: 1,
+          value: 50,
+          hatchedAt: Date.now(),
+        };
+        newSlimes = [...prev.slimes, rewardSlime];
+        newlyHatched = rewardSlime;
+      }
+
+      return {
+        ...prev,
+        eggs: prev.eggs + (goal.rewardEggs ?? 0),
+        coins: prev.coins + (goal.rewardCoins ?? 0),
+        tickets: (prev.tickets ?? 0) + (goal.rewardTickets ?? 0),
+        slimes: newSlimes,
+        newlyHatchedSlime: newlyHatched,
+        worldGoalsClaimed: newGoalsClaimed,
+      };
+    });
+  }, [playCoinCollect]);
 
   const toggleEquipSlime = (id: string) => {
     setState(prev => {
@@ -1022,7 +1091,6 @@ export default function App() {
     setWorldNavTransition(false);
     setWorldNavShiftPx(delta * 28);
     setState((s) => ({ ...s, gameWorldIndex: next }));
-    // Close the upgrades panel when switching to a completed level
     if (next < state.maxUnlockedGameWorld) setIsUpgradesOpen(false);
   };
 
@@ -1986,14 +2054,23 @@ export default function App() {
                   />
                 </div>
 
-                <div className="pointer-events-none absolute left-1/2 top-game-world-label z-[35] -translate-x-1/2 flex items-center gap-1.5">
-                  <div className="ui-emerald-outline-soft rounded-full bg-emerald-950/25 px-3 py-1 shadow-sm backdrop-blur-md">
-                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
-                      {GAME_WORLDS[state.gameWorldIndex]?.name ?? GAME_WORLDS[0].name}
-                    </span>
+                <div className="pointer-events-none absolute left-0 right-0 top-game-world-label z-[35] flex flex-col items-center gap-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="ui-emerald-outline-soft rounded-full bg-emerald-950/25 px-3 py-1 shadow-sm backdrop-blur-md">
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+                        {GAME_WORLDS[state.gameWorldIndex]?.name ?? GAME_WORLDS[0].name}
+                      </span>
+                    </div>
+                    {isCompletedLevel && (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-300 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]" strokeWidth={2.5} />
+                    )}
                   </div>
-                  {isCompletedLevel && (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-300 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]" strokeWidth={2.5} />
+                  {!isCompletedLevel && (
+                    <LevelCompletionBar
+                      worldCoinsCollected={state.worldCoinsCollected ?? 0}
+                      goalsClaimed={state.worldGoalsClaimed ?? [false, false, false, false, false]}
+                      onClaim={handleClaimGoal}
+                    />
                   )}
                 </div>
 
@@ -2459,7 +2536,7 @@ export default function App() {
       </div>
 
       {/* Game tab: upgrades HUD above bottom nav — z-50 so it paints over glass-nav (z-40) */}
-      {state.activeTab === 'game' && !isCompletedLevel && (
+      {state.activeTab === 'game' && (
         <>
           {!isUpgradesOpen && (
             <button
@@ -2468,7 +2545,7 @@ export default function App() {
               className="game-hud-upgrade ui-emerald-outline pointer-events-auto absolute right-3.5 z-50 rounded-2xl bg-gradient-to-br from-white/95 to-emerald-50/90 p-3 text-emerald-700 shadow-lg shadow-emerald-900/10 backdrop-blur-md transition-transform hover:scale-110"
             >
               <TrendingUp className="h-6 w-6" />
-              {canAffordAnyGameUpgrade && (
+              {canAffordAnyGameUpgrade && !isCompletedLevel && (
                 <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-white bg-red-500" />
               )}
             </button>
@@ -2511,109 +2588,114 @@ export default function App() {
                   >
                   {(() => {
                     const worldCaps = getMaxGameUpgradeLevelForWorld(state.gameWorldIndex);
+                    // On completed levels show all upgrades at their max values for that world
+                    const dispLevel = <K extends keyof typeof worldCaps>(key: K) =>
+                      isCompletedLevel ? worldCaps[key] : (state.upgrades[key as keyof typeof state.upgrades] as number);
+                    const isMaxed = (key: keyof typeof state.upgrades) =>
+                      isCompletedLevel || isGameUpgradeMaxed(state.upgrades, key, state.gameWorldIndex);
                     return (
                       <>
                   <GameUpgradeRow
                     title="Character speed"
                     description="Run faster and reach coins sooner."
-                    level={state.upgrades.movementSpeed}
+                    level={dispLevel('movementSpeed')}
                     maxLevel={worldCaps.movementSpeed}
-                    currentStat={`${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed) / BASE_MOVEMENT_SPEED) * 100)}% speed`}
+                    currentStat={`${Math.round((gamePlayerBaseSpeedAtLevel(dispLevel('movementSpeed')) / BASE_MOVEMENT_SPEED) * 100)}% speed`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'movementSpeed', state.gameWorldIndex)
+                      isMaxed('movementSpeed')
                         ? 'MAX'
                         : `${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed + 1) / BASE_MOVEMENT_SPEED) * 100)}% speed`
                     }
                     cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
-                    canAfford={state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
                     onPurchase={() => buyUpgrade('movementSpeed')}
                     onPurchaseMax={() => buyUpgradeMax('movementSpeed')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed', state.gameWorldIndex)}
+                    maxed={isMaxed('movementSpeed')}
                   />
                   <GameUpgradeRow
                     title="Slime speed"
                     description="Slimes move faster and collect coins sooner."
-                    level={state.upgrades.slimeMovementSpeed}
+                    level={dispLevel('slimeMovementSpeed')}
                     maxLevel={worldCaps.slimeMovementSpeed}
-                    currentStat={`${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed) / BASE_SLIME_SPEED) * 100)}% speed`}
+                    currentStat={`${Math.round((gameSlimeBaseSpeedAtLevel(dispLevel('slimeMovementSpeed')) / BASE_SLIME_SPEED) * 100)}% speed`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed', state.gameWorldIndex)
+                      isMaxed('slimeMovementSpeed')
                         ? 'MAX'
                         : `${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed + 1) / BASE_SLIME_SPEED) * 100)}% speed`
                     }
                     cost={UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
-                    canAfford={state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
                     onPurchase={() => buyUpgrade('slimeMovementSpeed')}
                     onPurchaseMax={() => buyUpgradeMax('slimeMovementSpeed')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed', state.gameWorldIndex)}
+                    maxed={isMaxed('slimeMovementSpeed')}
                   />
                   <GameUpgradeRow
                     title="Coin respawn"
                     description="Shorten time between coin spawns."
-                    level={state.upgrades.respawnTime}
+                    level={dispLevel('respawnTime')}
                     maxLevel={worldCaps.respawnTime}
-                    currentStat={`${(gameRespawnIntervalMs(state.upgrades.respawnTime) / 1000).toFixed(1)}s`}
+                    currentStat={`${(gameRespawnIntervalMs(dispLevel('respawnTime')) / 1000).toFixed(1)}s`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'respawnTime', state.gameWorldIndex)
+                      isMaxed('respawnTime')
                         ? 'MAX'
                         : `${(gameRespawnIntervalMs(state.upgrades.respawnTime + 1) / 1000).toFixed(1)}s`
                     }
                     cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
-                    canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
                     onPurchase={() => buyUpgrade('respawnTime')}
                     onPurchaseMax={() => buyUpgradeMax('respawnTime')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime', state.gameWorldIndex)}
+                    maxed={isMaxed('respawnTime')}
                   />
                   <GameUpgradeRow
                     title="Coin cap"
                     description="Increase the number of coins that can be on screen."
-                    level={state.upgrades.coinCap}
+                    level={dispLevel('coinCap')}
                     maxLevel={worldCaps.coinCap}
-                    currentStat={`${onScreenCoinCap(state.upgrades.coinCap)} coins`}
+                    currentStat={`${onScreenCoinCap(dispLevel('coinCap'))} coins`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'coinCap', state.gameWorldIndex)
+                      isMaxed('coinCap')
                         ? 'MAX'
                         : `${onScreenCoinCap(state.upgrades.coinCap + 1)} coins`
                     }
                     cost={UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
-                    canAfford={state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
                     onPurchase={() => buyUpgrade('coinCap')}
                     onPurchaseMax={() => buyUpgradeMax('coinCap')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinCap', state.gameWorldIndex)}
+                    maxed={isMaxed('coinCap')}
                   />
                   <GameUpgradeRow
                     title="Coin value"
                     description="More coins each time you collect."
-                    level={state.upgrades.coinValue}
+                    level={dispLevel('coinValue')}
                     maxLevel={worldCaps.coinValue}
-                    currentStat={`${gameCoinValuePerCollect(state.upgrades.coinValue)} base 💰`}
+                    currentStat={`${gameCoinValuePerCollect(dispLevel('coinValue'))} base 💰`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'coinValue', state.gameWorldIndex)
+                      isMaxed('coinValue')
                         ? 'MAX'
                         : `${gameCoinValuePerCollect(state.upgrades.coinValue + 1)} base 💰`
                     }
                     cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
-                    canAfford={state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
                     onPurchase={() => buyUpgrade('coinValue')}
                     onPurchaseMax={() => buyUpgradeMax('coinValue')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinValue', state.gameWorldIndex)}
+                    maxed={isMaxed('coinValue')}
                   />
                   <GameUpgradeRow
                     title="Slime cap"
                     description="Equip more slimes to collect coins at once."
-                    level={state.upgrades.slimeCap}
+                    level={dispLevel('slimeCap')}
                     maxLevel={worldCaps.slimeCap}
-                    currentStat={`${equippedSlimeCapAtLevel(state.upgrades.slimeCap)} slimes`}
+                    currentStat={`${equippedSlimeCapAtLevel(dispLevel('slimeCap'))} slimes`}
                     nextStat={
-                      isGameUpgradeMaxed(state.upgrades, 'slimeCap', state.gameWorldIndex)
+                      isMaxed('slimeCap')
                         ? 'MAX'
                         : `${equippedSlimeCapAtLevel(state.upgrades.slimeCap + 1)} slimes`
                     }
                     cost={UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
-                    canAfford={state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
+                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
                     onPurchase={() => buyUpgrade('slimeCap')}
                     onPurchaseMax={() => buyUpgradeMax('slimeCap')}
-                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeCap', state.gameWorldIndex)}
+                    maxed={isMaxed('slimeCap')}
                   />
                       </>
                     );
@@ -2738,7 +2820,7 @@ function GameUpgradeRow({
           disabled={maxed || !canAfford}
           className={`flex flex-1 flex-col items-center justify-center rounded-lg border py-2 text-[9px] font-black uppercase leading-none shadow-sm transition-all active:scale-[0.98] ${
             maxed
-              ? 'cursor-default border-orange-400/60 bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-1 ring-orange-300/50'
+              ? 'cursor-default border-zinc-200 bg-zinc-100 text-zinc-400'
               : canAfford
                 ? 'border-orange-400/60 bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-1 ring-orange-300/50 hover:brightness-105'
                 : 'cursor-default border-zinc-200 bg-zinc-100/90 text-zinc-400'

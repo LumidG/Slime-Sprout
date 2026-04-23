@@ -49,8 +49,8 @@ export function onScreenCoinCap(coinCapLevel: number): number {
  * under floating header / nav / world chrome. The canvas is full-viewport; UI overlays it.
  */
 export const COIN_SPAWN_INSETS = {
-  /** Header (safe area + stats row) + world name chip */
-  top: 104,
+  /** Header (safe area + stats row) + world name chip + level completion bar */
+  top: 130,
   /** Bottom tab bar + home indicator / safe area */
   bottom: 120,
   /** Default horizontal pad; narrow when world chevrons are hidden (see GameWorld props) */
@@ -626,6 +626,76 @@ export function migrateMaxUnlockedToSandFlowerOrder(oldMax: number): number {
   }
   return Math.min(5, maxNew);
 }
+
+/** One of the five per-world milestone goals shown in the level completion bar. */
+export interface LevelGoal {
+  /** Raw coin count (from field collection) needed to reach this goal. */
+  threshold: number;
+  /** Short description shown below the bar. */
+  label: string;
+  rewardEggs: number;
+  /** Coin-currency added directly to the player's balance. */
+  rewardCoins: number;
+  rewardTickets: number;
+  /** If true, a random slime is added to the player's collection. */
+  rewardSlime: boolean;
+  /** Human-readable reward summary shown on the collect button. */
+  rewardLabel: string;
+  isFinal?: boolean;
+}
+
+/**
+ * Five milestone goals per world. Progress tracks raw coins collected from the field
+ * in the current world session (resets when the next world unlocks).
+ */
+export const LEVEL_GOALS: readonly LevelGoal[] = [
+  {
+    threshold: 100,
+    label: 'Collect 100 coins',
+    rewardEggs: 1,
+    rewardCoins: 0,
+    rewardTickets: 0,
+    rewardSlime: false,
+    rewardLabel: '+1 Egg 🥚',
+  },
+  {
+    threshold: 350,
+    label: 'Collect 350 coins',
+    rewardEggs: 0,
+    rewardCoins: 150,
+    rewardTickets: 0,
+    rewardSlime: false,
+    rewardLabel: '+150 Coins 💰',
+  },
+  {
+    threshold: 800,
+    label: 'Collect 800 coins',
+    rewardEggs: 0,
+    rewardCoins: 0,
+    rewardTickets: 1,
+    rewardSlime: false,
+    rewardLabel: '+1 Ticket 🎟️',
+  },
+  {
+    threshold: 1800,
+    label: 'Collect 1,800 coins',
+    rewardEggs: 0,
+    rewardCoins: 0,
+    rewardTickets: 2,
+    rewardSlime: false,
+    rewardLabel: '+2 Tickets 🎟️',
+  },
+  {
+    threshold: 4000,
+    label: 'Collect 4,000 coins',
+    rewardEggs: 0,
+    rewardCoins: 0,
+    rewardTickets: 3,
+    rewardSlime: true,
+    rewardLabel: '+3 Tickets + Mystery Slime ✨',
+    isFinal: true,
+  },
+] as const;
 
 /** Price per single egg. */
 export const EGG_COST = 50;
