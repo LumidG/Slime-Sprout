@@ -19,11 +19,11 @@ export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
 
 /**
- * Max coins on screen — scales with respawn tier, capped so late tiers add spawn rate
- * without stuffing the field (matches ~20 max at tier 10+ from the old 10-level cap).
+ * Max coins on screen — scales with coin cap tier (1–10), capped at 20.
+ * Each tier adds 2 coins to the field (2, 4, 6, … 20).
  */
-export function onScreenCoinCap(respawnTimeLevel: number): number {
-  const raw = 2 * Math.max(1, Math.floor(respawnTimeLevel));
+export function onScreenCoinCap(coinCapLevel: number): number {
+  const raw = 2 * Math.max(1, Math.floor(coinCapLevel));
   return Math.min(20, raw);
 }
 
@@ -55,6 +55,11 @@ export function gamePlayerBaseSpeedAtLevel(movementSpeedLevel: number): number {
 /** Flat speed gained from the next movement upgrade (constant every level). */
 export function gameMovementSpeedFlatBonusPerLevel(): number {
   return BASE_MOVEMENT_SPEED * 0.03;
+}
+
+/** Slime base speed multiplier at a slime movement upgrade level (before agility/buffs) — matches `GameWorld`. */
+export function gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel: number): number {
+  return BASE_SLIME_SPEED * (1 + slimeMovementSpeedLevel * 0.03);
 }
 
 /** Time between coin spawns — matches `GameWorld` / automation idle math. */
@@ -438,23 +443,30 @@ export const UPGRADE_COSTS = {
   automation: 18,
   /** Softer exponent so 20 tiers stay grindable (was tuned for 10 tiers). */
   movementSpeed: (level: number) => Math.floor(10 * Math.pow(1.19, level)),
+  slimeMovementSpeed: (level: number) => Math.floor(10 * Math.pow(1.19, level)),
   respawnTime: (level: number) => Math.floor(12 * Math.pow(1.36, level)),
   /** Cost for the next coin-value tier (current tier = `level`). */
   coinValue: (level: number) => Math.max(1, Math.floor((level + 1) / 2)),
+  /** Cost for the next coin cap tier (+2 coins on screen per tier). */
+  coinCap: (level: number) => Math.floor(15 * Math.pow(1.4, level)),
 };
 
 /** Caps for shop upgrades on the game tab (automation is 0/1). */
 export const MAX_GAME_UPGRADE_LEVEL = {
   movementSpeed: 20,
+  slimeMovementSpeed: 20,
   respawnTime: 20,
   coinValue: 20,
+  coinCap: 10,
 } as const;
 
 export type GameUpgradeSnapshot = {
   automation: number;
   movementSpeed: number;
+  slimeMovementSpeed: number;
   respawnTime: number;
   coinValue: number;
+  coinCap: number;
 };
 
 export function isGameUpgradeMaxed(
@@ -462,15 +474,17 @@ export function isGameUpgradeMaxed(
   key: keyof GameUpgradeSnapshot
 ): boolean {
   if (key === 'automation') return upgrades.automation > 0;
-  return upgrades[key] >= MAX_GAME_UPGRADE_LEVEL[key];
+  return upgrades[key] >= MAX_GAME_UPGRADE_LEVEL[key as keyof typeof MAX_GAME_UPGRADE_LEVEL];
 }
 
 export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot): boolean {
   return (
     upgrades.automation > 0 &&
     upgrades.movementSpeed >= MAX_GAME_UPGRADE_LEVEL.movementSpeed &&
+    upgrades.slimeMovementSpeed >= MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed &&
     upgrades.respawnTime >= MAX_GAME_UPGRADE_LEVEL.respawnTime &&
-    upgrades.coinValue >= MAX_GAME_UPGRADE_LEVEL.coinValue
+    upgrades.coinValue >= MAX_GAME_UPGRADE_LEVEL.coinValue &&
+    upgrades.coinCap >= MAX_GAME_UPGRADE_LEVEL.coinCap
   );
 }
 
@@ -580,4 +594,4 @@ export const SLIME_NAMES = [
   'Cloudy', 'Sparky', 'Zippy', 'Chonky', 'Tiny', 'Peanut', 'Bean', 'Sprout',
   'Marshmallow', 'Taffy', 'Boba', 'Matcha', 'Yuzu'
 ];
-
+

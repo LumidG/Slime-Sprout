@@ -8,8 +8,8 @@ import {
   COIN_SPAWN_INSETS,
   COIN_SPAWN_INSET_X_WITH_WORLD_NAV,
   gamePlayerBaseSpeedAtLevel,
+  gameSlimeBaseSpeedAtLevel,
   gameRespawnIntervalMs,
-  BASE_SLIME_SPEED,
   BASE_COLLECT_RADIUS,
   BASE_SLIME_COLLECT_RADIUS,
   TRAIT_EFFECTS,
@@ -239,7 +239,9 @@ function drawGroundTrailParticles(ctx: CanvasRenderingContext2D, particles: Grou
 interface GameWorldProps {
   onCollect: (count: number) => void;
   movementSpeedLevel: number;
+  slimeMovementSpeedLevel: number;
   respawnTimeLevel: number;
+  coinCapLevel: number;
   equippedSlimes: Slime[];
   /** Visual theme index 0–5 */
   worldIndex: number;
@@ -484,7 +486,9 @@ function drawWorldDecoration(
 export const GameWorld: React.FC<GameWorldProps> = ({
   onCollect,
   movementSpeedLevel,
+  slimeMovementSpeedLevel,
   respawnTimeLevel,
+  coinCapLevel,
   equippedSlimes,
   worldIndex,
   insetLeftForWorldNav = false,
@@ -593,12 +597,12 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
   };
 
-  // Match on-screen coin count to respawn upgrade (2, 4, 6, …); trim or spawn as level changes.
+  // Match on-screen coin count to coin cap upgrade (2, 4, 6, …); trim or spawn as level changes.
   useEffect(() => {
     const { width, height } = dimensionsRef.current;
     const w = width > 0 ? width : GAME_WIDTH;
     const h = height > 0 ? height : GAME_HEIGHT;
-    const cap = onScreenCoinCap(respawnTimeLevel);
+    const cap = onScreenCoinCap(coinCapLevel);
     while (coinsRef.current.length > cap) {
       coinsRef.current.pop();
     }
@@ -611,7 +615,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         scale: 1,
       });
     }
-  }, [respawnTimeLevel, insetLeftForWorldNav, insetRightForWorldNav]);
+  }, [coinCapLevel, insetLeftForWorldNav, insetRightForWorldNav]);
 
   // Keep coins inside the playfield when world chevron overlays appear or disappear
   useEffect(() => {
@@ -731,7 +735,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       const slimeBeforeMove = { x: sPos.x, y: sPos.y };
       const effect = TRAIT_EFFECTS[slime.trait];
       const selfSpeedBuff = (isTraitCycleActive && effect.selfSpeed) ? effect.selfSpeed : 0;
-      const finalSlimeSpeed = BASE_SLIME_SPEED * (1 + (slime.stats.agility / 20)) * (1 + selfSpeedBuff) * (1 + globalSlimeSpeedBuff);
+      const finalSlimeSpeed = gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel) * (1 + (slime.stats.agility / 20)) * (1 + selfSpeedBuff) * (1 + globalSlimeSpeedBuff);
 
       let sMoveDir = { x: 0, y: 0 };
       
@@ -897,7 +901,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       insetLeftForWorldNav,
       insetRightForWorldNav
     );
-    const screenCoinCap = onScreenCoinCap(respawnTimeLevel);
+    const screenCoinCap = onScreenCoinCap(coinCapLevel);
     if (coinsRef.current.length < screenCoinCap && now - lastRespawnRef.current > respawnInterval) {
       if (maxX > minX && maxY > minY) {
         coinsRef.current.push({

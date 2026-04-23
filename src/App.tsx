@@ -64,7 +64,9 @@ import {
   isGameUpgradeMaxed,
   onScreenCoinCap,
   BASE_MOVEMENT_SPEED,
+  BASE_SLIME_SPEED,
   gamePlayerBaseSpeedAtLevel,
+  gameSlimeBaseSpeedAtLevel,
   gameRespawnIntervalMs,
   gameCoinValuePerCollect,
   ARENA_ABILITY_META,
@@ -240,10 +242,14 @@ export default function App() {
   const canAffordAnyGameUpgrade =
     (!isGameUpgradeMaxed(state.upgrades, 'movementSpeed') &&
       state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed') &&
+      state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'respawnTime') &&
       state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
-      state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue));
+      state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)) ||
+    (!isGameUpgradeMaxed(state.upgrades, 'coinCap') &&
+      state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap));
   
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
@@ -314,6 +320,10 @@ export default function App() {
           MAX_GAME_UPGRADE_LEVEL.movementSpeed,
           Math.max(1, Math.floor(Number(parsed.upgrades.movementSpeed)) || 1)
         );
+        parsed.upgrades.slimeMovementSpeed = Math.min(
+          MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed,
+          Math.max(1, Math.floor(Number(parsed.upgrades.slimeMovementSpeed)) || 1)
+        );
         parsed.upgrades.respawnTime = Math.min(
           MAX_GAME_UPGRADE_LEVEL.respawnTime,
           Math.max(1, Math.floor(Number(parsed.upgrades.respawnTime)) || 1)
@@ -321,6 +331,10 @@ export default function App() {
         parsed.upgrades.coinValue = Math.min(
           MAX_GAME_UPGRADE_LEVEL.coinValue,
           Math.max(1, Math.floor(Number(parsed.upgrades.coinValue)) || 1)
+        );
+        parsed.upgrades.coinCap = Math.min(
+          MAX_GAME_UPGRADE_LEVEL.coinCap,
+          Math.max(1, Math.floor(Number(parsed.upgrades.coinCap)) || 1)
         );
       }
 
@@ -462,8 +476,10 @@ export default function App() {
     isLoading,
     state.upgrades.automation,
     state.upgrades.movementSpeed,
+    state.upgrades.slimeMovementSpeed,
     state.upgrades.respawnTime,
     state.upgrades.coinValue,
+    state.upgrades.coinCap,
     state.maxUnlockedGameWorld,
   ]);
 
@@ -801,8 +817,10 @@ export default function App() {
       upgrades: {
         automation: 1,
         movementSpeed: MAX_GAME_UPGRADE_LEVEL.movementSpeed,
+        slimeMovementSpeed: MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed,
         respawnTime: MAX_GAME_UPGRADE_LEVEL.respawnTime,
         coinValue: MAX_GAME_UPGRADE_LEVEL.coinValue,
+        coinCap: MAX_GAME_UPGRADE_LEVEL.coinCap,
       }
     }));
   };
@@ -1663,7 +1681,9 @@ export default function App() {
                     worldIndex={state.gameWorldIndex}
                     onCollect={handleGameCollect}
                     movementSpeedLevel={state.upgrades.movementSpeed}
+                    slimeMovementSpeedLevel={state.upgrades.slimeMovementSpeed}
                     respawnTimeLevel={state.upgrades.respawnTime}
+                    coinCapLevel={state.upgrades.coinCap}
                     equippedSlimes={state.slimes.filter((s) =>
                       state.equippedSlimeIds.includes(s.id)
                     )}
@@ -2179,7 +2199,7 @@ export default function App() {
                     className="no-scrollbar flex max-h-full min-h-0 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-0.5 pb-0.5"
                   >
                   <GameUpgradeRow
-                    title="Move speed"
+                    title="Character speed"
                     description="Run faster and reach coins sooner."
                     level={state.upgrades.movementSpeed}
                     maxLevel={MAX_GAME_UPGRADE_LEVEL.movementSpeed}
@@ -2195,7 +2215,23 @@ export default function App() {
                     maxed={isGameUpgradeMaxed(state.upgrades, 'movementSpeed')}
                   />
                   <GameUpgradeRow
-                    title="Faster spawns"
+                    title="Slime speed"
+                    description="Slimes move faster and collect coins sooner."
+                    level={state.upgrades.slimeMovementSpeed}
+                    maxLevel={MAX_GAME_UPGRADE_LEVEL.slimeMovementSpeed}
+                    currentStat={`${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed) / BASE_SLIME_SPEED) * 100)}% speed`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed')
+                        ? 'MAX'
+                        : `${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed + 1) / BASE_SLIME_SPEED) * 100)}% speed`
+                    }
+                    cost={UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
+                    canAfford={state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
+                    onPurchase={() => buyUpgrade('slimeMovementSpeed')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed')}
+                  />
+                  <GameUpgradeRow
+                    title="Coin respawn"
                     description="Shorten time between coin spawns."
                     level={state.upgrades.respawnTime}
                     maxLevel={MAX_GAME_UPGRADE_LEVEL.respawnTime}
@@ -2209,7 +2245,22 @@ export default function App() {
                     canAfford={state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
                     onPurchase={() => buyUpgrade('respawnTime')}
                     maxed={isGameUpgradeMaxed(state.upgrades, 'respawnTime')}
-                    statSubtitle={`+${onScreenCoinCap(state.upgrades.respawnTime)} max on field → +${isGameUpgradeMaxed(state.upgrades, 'respawnTime') ? onScreenCoinCap(state.upgrades.respawnTime) : onScreenCoinCap(state.upgrades.respawnTime + 1)}`}
+                  />
+                  <GameUpgradeRow
+                    title="Coin cap"
+                    description="Increase the number of coins that can be on screen."
+                    level={state.upgrades.coinCap}
+                    maxLevel={MAX_GAME_UPGRADE_LEVEL.coinCap}
+                    currentStat={`${onScreenCoinCap(state.upgrades.coinCap)} coins`}
+                    nextStat={
+                      isGameUpgradeMaxed(state.upgrades, 'coinCap')
+                        ? 'MAX'
+                        : `${onScreenCoinCap(state.upgrades.coinCap + 1)} coins`
+                    }
+                    cost={UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
+                    canAfford={state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
+                    onPurchase={() => buyUpgrade('coinCap')}
+                    maxed={isGameUpgradeMaxed(state.upgrades, 'coinCap')}
                   />
                   <GameUpgradeRow
                     title="Coin value"

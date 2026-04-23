@@ -59,8 +59,10 @@ export interface GameState {
   upgrades: {
     automation: number; // 0 or 1
     movementSpeed: number;
+    slimeMovementSpeed: number;
     respawnTime: number;
     coinValue: number;
+    coinCap: number;
   };
 
   // Slimes
@@ -121,8 +123,10 @@ export const INITIAL_STATE: GameState = {
   upgrades: {
     automation: 0,
     movementSpeed: 1,
+    slimeMovementSpeed: 1,
     respawnTime: 1,
     coinValue: 1,
+    coinCap: 1,
   },
   slimes: [],
   slimeDetailSeenIds: [],
