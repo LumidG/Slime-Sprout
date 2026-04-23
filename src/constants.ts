@@ -562,6 +562,9 @@ export function eggPurchaseCost(amount: number): number {
   return EGG_COST * amount;
 }
 
+/** Coins required to breed two slimes (market tab). */
+export const BREEDING_COST = 500;
+
 export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.8, level));
 
 /** Stat increase per upgrade; must match slime stat upgrade logic in App. */

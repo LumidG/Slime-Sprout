@@ -53,6 +53,25 @@ interface GroundTrailParticle {
 
 const MAX_GROUND_TRAIL_PARTICLES = 140;
 
+/** Cap DPR so very large displays do not allocate huge framebuffers. */
+const MAX_CANVAS_DPR = 3;
+
+/**
+ * Size the canvas bitmap to physical pixels and map it to the layout size in CSS pixels.
+ */
+function syncCanvasToDevicePixels(canvas: HTMLCanvasElement, cssWidth: number, cssHeight: number): number {
+  const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, MAX_CANVAS_DPR);
+  const bw = Math.max(1, Math.round(cssWidth * dpr));
+  const bh = Math.max(1, Math.round(cssHeight * dpr));
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+  }
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  return dpr;
+}
+
 const GRASS_TRAIL_COLORS = [
   'rgba(34, 197, 94, 0.52)',
   'rgba(74, 222, 128, 0.48)',
@@ -525,10 +544,6 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       if (entry) {
         const { width, height } = entry.contentRect;
         dimensionsRef.current = { width, height };
-        if (canvasRef.current) {
-          canvasRef.current.width = width;
-          canvasRef.current.height = height;
-        }
 
         const r = playerRef.current.radius;
         if (width > r * 2 && height > r * 2) {
@@ -617,8 +632,16 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const respawnInterval = gameRespawnIntervalMs(respawnTimeLevel);
 
   useGameLoop((deltaTime) => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+
+    const { width, height } = dimensionsRef.current;
+    if (width < 1 || height < 1) return;
+    const dpr = syncCanvasToDevicePixels(canvas, width, height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // Calculate Buffs from traits
     let playerSpeedBuff = 0;
@@ -642,8 +665,6 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     const movementSpeed =
       gamePlayerBaseSpeedAtLevel(movementSpeedLevel) * (1 + playerSpeedBuff);
     const collectionRadius = BASE_COLLECT_RADIUS * (1 + globalRadiusBuff);
-
-    const { width, height } = dimensionsRef.current;
 
     const trailDecoration = theme.decoration;
 
