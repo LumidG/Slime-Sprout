@@ -3,10 +3,15 @@ import { useGameLoop } from '../hooks/useGameLoop';
 import { Slime } from '../types';
 import { 
   GAME_WIDTH, 
-  GAME_HEIGHT, 
+  GAME_HEIGHT,
+  GAME_WORLD_WIDTH,
+  GAME_WORLD_HEIGHT,
+  WALKABLE_WIDTH,
+  WALKABLE_HEIGHT,
+  WALKABLE_ORIGIN_X,
+  WALKABLE_ORIGIN_Y,
+  WORLD_EDGE_INSET,
   onScreenCoinCap, 
-  COIN_SPAWN_INSETS,
-  COIN_SPAWN_INSET_X_WITH_WORLD_NAV,
   gamePlayerBaseSpeedAtLevel,
   gameSlimeBaseSpeedAtLevel,
   gameRespawnIntervalMs,
@@ -251,51 +256,25 @@ interface GameWorldProps {
   insetRightForWorldNav?: boolean;
 }
 
-function getCoinSpawnBounds(
-  width: number,
-  height: number,
-  insetLeftWide: boolean,
-  insetRightWide: boolean
-) {
-  const left = insetLeftWide ? COIN_SPAWN_INSET_X_WITH_WORLD_NAV : COIN_SPAWN_INSETS.left;
-  const right = insetRightWide ? COIN_SPAWN_INSET_X_WITH_WORLD_NAV : COIN_SPAWN_INSETS.right;
-  const minX = left;
-  const maxX = width - right;
-  const minY = COIN_SPAWN_INSETS.top;
-  const maxY = height - COIN_SPAWN_INSETS.bottom;
-  return { minX, maxX, minY, maxY };
+/**
+ * Fixed world-space rectangle where coins are allowed to spawn — identical in size
+ * to the original viewport-sized playfield, just anchored at the walkable origin.
+ */
+function getWorldCoinSpawnBounds() {
+  return {
+    minX: WALKABLE_ORIGIN_X + WORLD_EDGE_INSET,
+    maxX: WALKABLE_ORIGIN_X + WALKABLE_WIDTH - WORLD_EDGE_INSET,
+    minY: WALKABLE_ORIGIN_Y + WORLD_EDGE_INSET,
+    maxY: WALKABLE_ORIGIN_Y + WALKABLE_HEIGHT - WORLD_EDGE_INSET,
+  };
 }
 
-function randomCoinPositionInBounds(
-  width: number,
-  height: number,
-  insetLeftWide: boolean,
-  insetRightWide: boolean
-): { x: number; y: number } {
-  const { minX, maxX, minY, maxY } = getCoinSpawnBounds(width, height, insetLeftWide, insetRightWide);
-  if (maxX <= minX || maxY <= minY) {
-    const r = 12;
-    return {
-      x: Math.max(r, Math.min(width - r, width / 2)),
-      y: Math.max(r, Math.min(height - r, height / 2)),
-    };
-  }
+function randomWorldCoinPosition(): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getWorldCoinSpawnBounds();
   return {
     x: Math.random() * (maxX - minX) + minX,
     y: Math.random() * (maxY - minY) + minY,
   };
-}
-
-function isCoinInSpawnBounds(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  insetLeftWide: boolean,
-  insetRightWide: boolean
-): boolean {
-  const { minX, maxX, minY, maxY } = getCoinSpawnBounds(width, height, insetLeftWide, insetRightWide);
-  return x >= minX && x <= maxX && y >= minY && y <= maxY;
 }
 
 /** Deterministic 0–1 value for irregular spacing / phases (stable each frame). */
@@ -497,8 +476,16 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const theme = GAME_WORLDS[Math.min(GAME_WORLDS.length - 1, Math.max(0, worldIndex))];
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /** Current viewport size in CSS pixels. */
   const dimensionsRef = useRef({ width: GAME_WIDTH, height: GAME_HEIGHT });
-  const playerRef = useRef({ x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2, radius: 15 });
+  /** Camera top-left corner in world coordinates. */
+  const cameraRef = useRef({ x: 0, y: 0 });
+  /** Player position in world coordinates. Starts at centre of the walkable area. */
+  const playerRef = useRef({
+    x: WALKABLE_ORIGIN_X + WALKABLE_WIDTH / 2,
+    y: WALKABLE_ORIGIN_Y + WALKABLE_HEIGHT / 2,
+    radius: 15,
+  });
   const slimesRef = useRef<
     Record<string, { x: number; y: number; targetId?: number; moveDist: number; walkPhase: number }>
   >({});
@@ -538,7 +525,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     };
   }, []);
 
-  // Resize handler
+  // Track viewport size for camera calculations. Player/coins are in world space and don't need repositioning on resize.
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -546,21 +533,11 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       if (entry) {
         const { width, height } = entry.contentRect;
         dimensionsRef.current = { width, height };
-
-        const r = playerRef.current.radius;
-        if (width > r * 2 && height > r * 2) {
-          playerRef.current.x = Math.max(r, Math.min(width - r, playerRef.current.x));
-          playerRef.current.y = Math.max(r, Math.min(height - r, playerRef.current.y));
-        }
-        
-        coinsRef.current = coinsRef.current.filter((c) =>
-          isCoinInSpawnBounds(c.x, c.y, width, height, insetLeftForWorldNav, insetRightForWorldNav)
-        );
       }
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [insetLeftForWorldNav, insetRightForWorldNav]);
+  }, []);
 
   const getCanvasCoords = (e: React.PointerEvent) => {
     const canvas = canvasRef.current;
@@ -598,38 +575,17 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   };
 
   // Match on-screen coin count to coin cap upgrade (2, 4, 6, …); trim or spawn as level changes.
+  // Coins are in static world coordinates — no dependency on viewport or nav insets.
   useEffect(() => {
-    const { width, height } = dimensionsRef.current;
-    const w = width > 0 ? width : GAME_WIDTH;
-    const h = height > 0 ? height : GAME_HEIGHT;
     const cap = onScreenCoinCap(coinCapLevel);
     while (coinsRef.current.length > cap) {
       coinsRef.current.pop();
     }
     while (coinsRef.current.length < cap) {
-      const { x, y } = randomCoinPositionInBounds(w, h, insetLeftForWorldNav, insetRightForWorldNav);
-      coinsRef.current.push({
-        id: nextCoinId.current++,
-        x,
-        y,
-        scale: 1,
-      });
+      const { x, y } = randomWorldCoinPosition();
+      coinsRef.current.push({ id: nextCoinId.current++, x, y, scale: 1 });
     }
-  }, [coinCapLevel, insetLeftForWorldNav, insetRightForWorldNav]);
-
-  // Keep coins inside the playfield when world chevron overlays appear or disappear
-  useEffect(() => {
-    const { width, height } = dimensionsRef.current;
-    const w = width > 0 ? width : GAME_WIDTH;
-    const h = height > 0 ? height : GAME_HEIGHT;
-    const { minX, maxX, minY, maxY } = getCoinSpawnBounds(w, h, insetLeftForWorldNav, insetRightForWorldNav);
-    if (maxX <= minX || maxY <= minY) return;
-    coinsRef.current = coinsRef.current.map((c) => ({
-      ...c,
-      x: Math.max(minX, Math.min(maxX, c.x)),
-      y: Math.max(minY, Math.min(maxY, c.y)),
-    }));
-  }, [insetLeftForWorldNav, insetRightForWorldNav]);
+  }, [coinCapLevel]);
 
   const respawnInterval = gameRespawnIntervalMs(respawnTimeLevel);
 
@@ -695,9 +651,10 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       playerRef.current.y += moveDir.y * movementSpeed * frameScale * joystickSpeedMult;
     }
 
-    // Bounds check
-    playerRef.current.x = Math.max(playerRef.current.radius, Math.min(width - playerRef.current.radius, playerRef.current.x));
-    playerRef.current.y = Math.max(playerRef.current.radius, Math.min(height - playerRef.current.radius, playerRef.current.y));
+    // Clamp player to walkable area (invisible walls at play-zone boundary)
+    const pr = playerRef.current.radius;
+    playerRef.current.x = Math.max(WALKABLE_ORIGIN_X + pr, Math.min(WALKABLE_ORIGIN_X + WALKABLE_WIDTH - pr, playerRef.current.x));
+    playerRef.current.y = Math.max(WALKABLE_ORIGIN_Y + pr, Math.min(WALKABLE_ORIGIN_Y + WALKABLE_HEIGHT - pr, playerRef.current.y));
 
     {
       const pdx = playerRef.current.x - playerBeforeMove.x;
@@ -813,9 +770,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         sPos.y += (pDy / pDist) * push;
       }
 
-      // Bounds check for slime
-      sPos.x = Math.max(10, Math.min(width - 10, sPos.x));
-      sPos.y = Math.max(10, Math.min(height - 10, sPos.y));
+      // Clamp slime to walkable area
+      sPos.x = Math.max(WALKABLE_ORIGIN_X + 10, Math.min(WALKABLE_ORIGIN_X + WALKABLE_WIDTH - 10, sPos.x));
+      sPos.y = Math.max(WALKABLE_ORIGIN_Y + 10, Math.min(WALKABLE_ORIGIN_Y + WALKABLE_HEIGHT - 10, sPos.y));
 
       {
         const sdx = sPos.x - slimeBeforeMove.x;
@@ -893,25 +850,13 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       onCollect(collectedIds.length);
     }
 
-    // Respawn logic
+    // Respawn logic — coins spawn anywhere inside the static world bounds
     const now = Date.now();
-    const { minX, maxX, minY, maxY } = getCoinSpawnBounds(
-      width,
-      height,
-      insetLeftForWorldNav,
-      insetRightForWorldNav
-    );
     const screenCoinCap = onScreenCoinCap(coinCapLevel);
     if (coinsRef.current.length < screenCoinCap && now - lastRespawnRef.current > respawnInterval) {
-      if (maxX > minX && maxY > minY) {
-        coinsRef.current.push({
-          id: nextCoinId.current++,
-          x: Math.random() * (maxX - minX) + minX,
-          y: Math.random() * (maxY - minY) + minY,
-          scale: 0,
-        });
-        lastRespawnRef.current = now;
-      }
+      const { x: rx, y: ry } = randomWorldCoinPosition();
+      coinsRef.current.push({ id: nextCoinId.current++, x: rx, y: ry, scale: 0 });
+      lastRespawnRef.current = now;
     }
 
     // Update Effects
@@ -956,18 +901,39 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       return p.life > 0;
     });
 
-    // Draw
+    // ── Camera ────────────────────────────────────────────────────────────────
+    // Centre the camera on the player, clamped so we never show outside the world.
+    let camX = playerRef.current.x - width / 2;
+    let camY = playerRef.current.y - height / 2;
+    camX = Math.max(0, Math.min(GAME_WORLD_WIDTH - width, camX));
+    camY = Math.max(0, Math.min(GAME_WORLD_HEIGHT - height, camY));
+    cameraRef.current = { x: camX, y: camY };
+
+    // ── Draw ──────────────────────────────────────────────────────────────────
     ctx.clearRect(0, 0, width, height);
 
+    // Push camera transform — everything below is in world coordinates.
+    ctx.save();
+    ctx.translate(-camX, -camY);
+
     const [g0, g1, g2] = theme.gradient;
-    const fieldGrad = ctx.createLinearGradient(0, 0, width, height);
+    const fieldGrad = ctx.createLinearGradient(0, 0, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT);
     fieldGrad.addColorStop(0, g0);
     fieldGrad.addColorStop(0.48, g1);
     fieldGrad.addColorStop(1, g2);
     ctx.fillStyle = fieldGrad;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT);
 
-    drawWorldDecoration(ctx, width, height, theme.decoration, theme.accentStroke, timeNow / 1000);
+    drawWorldDecoration(ctx, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, theme.decoration, theme.accentStroke, timeNow / 1000);
+
+    // Walkable-area border
+    ctx.save();
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.35)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 8]);
+    ctx.strokeRect(WALKABLE_ORIGIN_X, WALKABLE_ORIGIN_Y, WALKABLE_WIDTH, WALKABLE_HEIGHT);
+    ctx.setLineDash([]);
+    ctx.restore();
 
     drawGroundTrailParticles(ctx, groundTrailRef.current);
 
@@ -1317,6 +1283,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       }
       ctx.restore();
     });
+
+    // Restore from world-space camera transform — joystick is a screen-space overlay.
+    ctx.restore();
 
     // Draw Joystick Overlay (anchored to initial touch, thumb follows drag)
     if (joystickRef.current.active) {

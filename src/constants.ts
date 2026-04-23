@@ -18,6 +18,23 @@ export const SUPPORT_MAILTO =
 export const GAME_WIDTH = 400;
 export const GAME_HEIGHT = 600;
 
+/** Total canvas world the camera can pan over — decorative area outside the play zone. */
+export const GAME_WORLD_WIDTH = 1200;
+export const GAME_WORLD_HEIGHT = 1800;
+
+/**
+ * The playable rectangle (coins + movement) is the same size as the original
+ * viewport-sized field (GAME_WIDTH × GAME_HEIGHT), placed at the centre of the world.
+ * Players and slimes cannot leave this area (invisible walls).
+ */
+export const WALKABLE_WIDTH = GAME_WIDTH;           // 400
+export const WALKABLE_HEIGHT = GAME_HEIGHT;          // 600
+export const WALKABLE_ORIGIN_X = (GAME_WORLD_WIDTH - WALKABLE_WIDTH) / 2;   // 400
+export const WALKABLE_ORIGIN_Y = (GAME_WORLD_HEIGHT - WALKABLE_HEIGHT) / 2; // 600
+
+/** Uniform inset from walkable-area edges used for coin spawn bounds. */
+export const WORLD_EDGE_INSET = 20;
+
 /**
  * Max coins on screen — scales with coin cap tier (1–10), capped at 20.
  * Each tier adds 2 coins to the field (2, 4, 6, … 20).
