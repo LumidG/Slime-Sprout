@@ -50,31 +50,6 @@ export interface Upgrade {
   costMultiplier: number;
 }
 
-/** Single slime auction in the Slime Market (offline-simulated). */
-export interface SlimeMarketAuction {
-  id: string;
-  slime: Slime;
-  seller: 'player' | 'npc';
-  endsAt: number;
-  /** Highest bid so far (0 if none). */
-  currentBid: number;
-  /** Minimum coins for the first bid. */
-  minBid: number;
-  highBidder: 'player' | 'npc' | null;
-  /** Coins the local player currently has committed as the high bid (only if highBidder === 'player'). */
-  playerBidAmount: number;
-  /**
-   * NPC listing only: set after the player places any bid; instant buy stays disabled until this
-   * auction ends (even if an NPC later outbids them).
-   */
-  npcInstantBuyLocked?: boolean;
-  /**
-   * Player listing only: guaranteed coins you would have had from “sell now” for this slime — used
-   * for UI and for NPC bid simulation (auction starts below this, may later exceed it).
-   */
-  playerSellNowSnapshot?: number;
-}
-
 export interface GameState {
   coins: number;
   totalCoinsCollected: number;
@@ -100,9 +75,6 @@ export interface GameState {
   } | null;
   newlyHatchedSlime: Slime | null;
 
-  /** Player slime auctions + NPC listings; persisted. */
-  slimeMarketAuctions: SlimeMarketAuction[];
-
   /**
    * Slime id → timestamp (ms) when arena **ability** cooldown ends (after using an ability in battle).
    */
@@ -112,7 +84,7 @@ export interface GameState {
   arenaWins: number;
 
   // UI State
-  activeTab: 'game' | 'slimes' | 'market' | 'slimeMarket' | 'arena';
+  activeTab: 'game' | 'slimes' | 'market' | 'arena';
   activeSubTab: string;
   hasCompletedOnboarding: boolean;
 
@@ -158,7 +130,6 @@ export const INITIAL_STATE: GameState = {
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
-  slimeMarketAuctions: [],
   slimeArenaAbilityCooldownUntil: {},
   arenaWins: 0,
   activeTab: 'game',

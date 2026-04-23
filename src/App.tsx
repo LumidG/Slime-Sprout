@@ -4,7 +4,6 @@ import {
   Settings, 
   Ghost,
   Dna, 
-  Gavel,
   TrendingUp, 
   Package, 
   ChevronRight,
@@ -35,9 +34,8 @@ import {
   Vibrate,
   Lock,
 } from 'lucide-react';
-import { GameState, INITIAL_STATE, Slime, SlimeMarketAuction, SlimeTrait, SlimeStats } from './types';
+import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
-import { SlimeMarketPanel } from './components/SlimeMarketPanel';
 import { SlimeArenaPanel } from './components/SlimeArenaPanel';
 import { 
   COLORS, 
@@ -69,13 +67,6 @@ import {
   gamePlayerBaseSpeedAtLevel,
   gameRespawnIntervalMs,
   gameCoinValuePerCollect,
-  processSlimeMarketTick,
-  getPlayerSellNowPrice,
-  getPlayerAuctionOpeningMinBid,
-  getNextMarketBid,
-  getInstantNpcBuyPrice,
-  SLIME_MARKET_MIN_BID_STEP,
-  SLIME_MARKET_AUCTION_MS,
   ARENA_ABILITY_META,
   isArenaAbilityOnCooldown,
   rollRandomArenaAbility,
@@ -257,13 +248,6 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
       state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue));
   
-  const now = Date.now();
-  const hasSlimeMarketTabNotification = state.slimeMarketAuctions.some((a) => {
-    if (a.endsAt <= now) return false;
-    if (a.seller === 'npc' && a.highBidder === 'player') return true;
-    if (a.seller === 'player' && a.highBidder === 'npc' && a.currentBid > 0) return true;
-    return false;
-  });
   const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
 
   const isGameTab = state.activeTab === 'game';
@@ -359,10 +343,7 @@ export default function App() {
         };
       }
 
-      if (!Array.isArray(parsed.slimeMarketAuctions)) {
-        parsed.slimeMarketAuctions = [];
-      }
-      const validTabs = new Set(['game', 'slimes', 'market', 'slimeMarket', 'arena']);
+      const validTabs = new Set(['game', 'slimes', 'market', 'arena']);
       if (!validTabs.has(parsed.activeTab)) {
         parsed.activeTab = 'game';
       }
@@ -387,9 +368,6 @@ export default function App() {
             arenaAbility: s.arenaAbility ?? rollRandomArenaAbility(),
           })
         );
-      }
-      if (parsed.activeTab === 'market' && parsed.marketSection === 'slimeMarket') {
-        parsed.activeTab = 'slimeMarket';
       }
       delete parsed.marketSection;
 
@@ -490,15 +468,6 @@ export default function App() {
       }));
     }
   }, [state, isLoading]);
-
-  // Slime market: resolve auctions, NPC bids on your listings, refill NPC listings.
-  useEffect(() => {
-    if (isLoading) return;
-    const run = () => setState((prev) => processSlimeMarketTick(prev));
-    run();
-    const id = window.setInterval(run, 2800);
-    return () => window.clearInterval(id);
-  }, [isLoading]);
 
   const addCoins = useCallback((count: number) => {
     setState(prev => {
@@ -758,107 +727,6 @@ export default function App() {
     }));
     setBreedingSelection([]);
     setState(s => ({ ...s, activeSubTab: 'collect' }));
-  };
-
-  const sellSlimeNow = (slimeId: string) => {
-    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
-    setState((prev) => {
-      const slime = prev.slimes.find((s) => s.id === slimeId);
-      if (!slime) return prev;
-      const price = getPlayerSellNowPrice(slime);
-      return {
-        ...prev,
-        coins: prev.coins + price,
-        totalCoinsCollected: prev.totalCoinsCollected + price,
-        slimes: prev.slimes.filter((s) => s.id !== slimeId),
-        equippedSlimeIds: prev.equippedSlimeIds.filter((id) => id !== slimeId),
-        slimeDetailSeenIds: prev.slimeDetailSeenIds.filter((x) => x !== slimeId),
-      };
-    });
-  };
-
-  const listSlimeForAuction = (slimeId: string) => {
-    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
-    setState((prev) => {
-      const slime = prev.slimes.find((s) => s.id === slimeId);
-      if (!slime) return prev;
-      const playerSellNowSnapshot = getPlayerSellNowPrice(slime);
-      const minBid = getPlayerAuctionOpeningMinBid(slime, playerSellNowSnapshot);
-      const auction: SlimeMarketAuction = {
-        id: `pl-${Math.random().toString(36).slice(2, 11)}`,
-        slime: { ...slime },
-        seller: 'player',
-        endsAt: Date.now() + SLIME_MARKET_AUCTION_MS,
-        currentBid: 0,
-        minBid,
-        highBidder: null,
-        playerBidAmount: 0,
-        playerSellNowSnapshot,
-      };
-      return {
-        ...prev,
-        slimes: prev.slimes.filter((s) => s.id !== slimeId),
-        equippedSlimeIds: prev.equippedSlimeIds.filter((id) => id !== slimeId),
-        slimeDetailSeenIds: prev.slimeDetailSeenIds.filter((x) => x !== slimeId),
-        slimeMarketAuctions: [...prev.slimeMarketAuctions, auction],
-      };
-    });
-  };
-
-  const placeMarketBid = (auctionId: string) => {
-    setState((prev) => {
-      const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
-      if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
-      if (a.highBidder === 'player') return prev;
-      const next = getNextMarketBid(a);
-      if (prev.coins < next) return prev;
-      let coins = prev.coins;
-      coins -= next;
-      let currentBid = next;
-      let highBidder: 'player' | 'npc' = 'player';
-      let playerBidAmount = next;
-      const cap = Math.floor(a.slime.value * 2.4);
-      if (Math.random() < 0.4 && currentBid + SLIME_MARKET_MIN_BID_STEP <= cap) {
-        const npcBid =
-          currentBid +
-          SLIME_MARKET_MIN_BID_STEP +
-          Math.floor(Math.random() * 4) * SLIME_MARKET_MIN_BID_STEP;
-        if (npcBid <= cap) {
-          coins += playerBidAmount;
-          highBidder = 'npc';
-          currentBid = npcBid;
-          playerBidAmount = 0;
-        }
-      }
-      const slimeMarketAuctions = prev.slimeMarketAuctions.map((x) =>
-        x.id === auctionId
-          ? { ...a, currentBid, highBidder, playerBidAmount, npcInstantBuyLocked: true }
-          : x
-      );
-      return { ...prev, coins, slimeMarketAuctions };
-    });
-  };
-
-  const placeMarketInstantBuy = (auctionId: string) => {
-    setState((prev) => {
-      const a = prev.slimeMarketAuctions.find((x) => x.id === auctionId);
-      if (!a || a.seller !== 'npc' || a.endsAt <= Date.now()) return prev;
-      if (a.npcInstantBuyLocked) return prev;
-      const instant = getInstantNpcBuyPrice(a);
-      const next = getNextMarketBid(a);
-      if (instant <= next) return prev;
-      let coins = prev.coins;
-      if (a.highBidder === 'player') coins += a.playerBidAmount;
-      if (coins < instant) return prev;
-      coins -= instant;
-      const slimeMarketAuctions = prev.slimeMarketAuctions.filter((x) => x.id !== auctionId);
-      return {
-        ...prev,
-        coins,
-        slimes: [...prev.slimes, a.slime],
-        slimeMarketAuctions,
-      };
-    });
   };
 
   const toggleBreedingSelection = (id: string) => {
@@ -2198,26 +2066,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {state.activeTab === 'slimeMarket' && (
-            <motion.div
-              key="slimeMarket"
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -100, opacity: 0 }}
-              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
-            >
-              <SlimeMarketPanel
-                coins={state.coins}
-                slimes={state.slimes}
-                auctions={state.slimeMarketAuctions}
-                onSellSlimeNow={sellSlimeNow}
-                onListSlimeAuction={listSlimeForAuction}
-                onBid={placeMarketBid}
-                onInstantBuy={placeMarketInstantBuy}
-              />
-            </motion.div>
-          )}
-
           {state.activeTab === 'arena' && (
             <motion.div
               key="arena"
@@ -2241,7 +2089,7 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Slime Market */}
+      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Arena */}
       <div
         className={
           isGameTab
@@ -2264,12 +2112,6 @@ export default function App() {
           active={state.activeTab === 'game'} 
           onClick={() => setState(s => ({ ...s, activeTab: 'game' }))}
           icon={<CircleDollarSign />}
-        />
-        <NavButton 
-          active={state.activeTab === 'slimeMarket'} 
-          onClick={() => setState(s => ({ ...s, activeTab: 'slimeMarket' }))}
-          icon={<Gavel />}
-          hasNotification={hasSlimeMarketTabNotification}
         />
         <NavButton 
           active={state.activeTab === 'arena'} 
