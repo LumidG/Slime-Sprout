@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, 
   Ghost,
-  Dna, 
   Gavel,
   TrendingUp, 
   Package, 
@@ -46,7 +45,6 @@ import {
   EGG_COST,
   EGG_BULK_10_COST,
   eggPurchaseCost,
-  BREEDING_COST,
   SLIME_UPGRADE_COST,
   SLIME_STAT_UPGRADE_DELTA,
   computeOfflineIdleGain,
@@ -82,7 +80,7 @@ import {
   type ArenaEncounter,
 } from './constants';
 import { SlimeStackSprite } from './components/SlimeStackSprite';
-import { rollNewSlimeVisuals, breedSlimeVisuals, withSlimeVisualDefaults } from './slimeSprites';
+import { rollNewSlimeVisuals, withSlimeVisualDefaults } from './slimeSprites';
 import { Capacitor } from '@capacitor/core';
 import { SystemUi } from './systemUi';
 import { useAppForeground } from './hooks/useAppForeground';
@@ -140,7 +138,6 @@ export default function App() {
   const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [selectedSlimeDetail, setSelectedSlimeDetail] = useState<Slime | null>(null);
-  const [breedingSelection, setBreedingSelection] = useState<string[]>([]);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   /** Short GPU translate when changing world; avoids remounting GameWorld (was causing heavy lag). */
@@ -175,7 +172,7 @@ export default function App() {
 
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
-    "Upgrade your slimes or breed them to create powerful hybrids!",
+    "Upgrade your slimes and build a strong team for the arena!",
     "Let's start collecting. Have fun!"
   ];
 
@@ -362,7 +359,7 @@ export default function App() {
       if (!Array.isArray(parsed.slimeMarketAuctions)) {
         parsed.slimeMarketAuctions = [];
       }
-      const validTabs = new Set(['game', 'slimes', 'market', 'slimeMarket', 'arena']);
+      const validTabs = new Set(['game', 'slimes', 'slimeMarket', 'arena']);
       if (!validTabs.has(parsed.activeTab)) {
         parsed.activeTab = 'game';
       }
@@ -388,11 +385,6 @@ export default function App() {
           })
         );
       }
-      if (parsed.activeTab === 'market' && parsed.marketSection === 'slimeMarket') {
-        parsed.activeTab = 'slimeMarket';
-      }
-      delete parsed.marketSection;
-
       // Cold start: always open the main coin playfield after load (not the last tab from the previous session).
       parsed.activeTab = 'game';
 
@@ -724,44 +716,7 @@ export default function App() {
     }));
   };
 
-  const breedSlimes = () => {
-    if (breedingSelection.length !== 2) return;
-    const id1 = breedingSelection[0];
-    const id2 = breedingSelection[1];
-    const s1 = state.slimes.find(s => s.id === id1);
-    const s2 = state.slimes.find(s => s.id === id2);
-    if (!s1 || !s2 || state.coins < BREEDING_COST) return;
-
-    const newSlime: Slime = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: getUniqueName(state.slimes),
-      color: s1.color, // Could mix colors
-      ...breedSlimeVisuals(withSlimeVisualDefaults(s1), withSlimeVisualDefaults(s2)),
-      stats: {
-        health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
-        strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
-        agility: Math.floor((s1.stats.agility + s2.stats.agility) / 2) + 2,
-      },
-      statLevels: { health: 1, strength: 1, agility: 1 },
-      trait: Math.random() > 0.5 ? s1.trait : s2.trait,
-      arenaAbility: Math.random() > 0.5 ? s1.arenaAbility : s2.arenaAbility,
-      level: 1,
-      value: 100,
-      hatchedAt: Date.now()
-    };
-
-    setState(prev => ({
-      ...prev,
-      coins: prev.coins - BREEDING_COST,
-      slimes: [...prev.slimes, newSlime],
-      newlyHatchedSlime: newSlime
-    }));
-    setBreedingSelection([]);
-    setState(s => ({ ...s, activeSubTab: 'collect' }));
-  };
-
   const sellSlimeNow = (slimeId: string) => {
-    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
     setState((prev) => {
       const slime = prev.slimes.find((s) => s.id === slimeId);
       if (!slime) return prev;
@@ -778,7 +733,6 @@ export default function App() {
   };
 
   const listSlimeForAuction = (slimeId: string) => {
-    setBreedingSelection((prev) => prev.filter((id) => id !== slimeId));
     setState((prev) => {
       const slime = prev.slimes.find((s) => s.id === slimeId);
       if (!slime) return prev;
@@ -858,14 +812,6 @@ export default function App() {
         slimes: [...prev.slimes, a.slime],
         slimeMarketAuctions,
       };
-    });
-  };
-
-  const toggleBreedingSelection = (id: string) => {
-    setBreedingSelection(prev => {
-      if (prev.includes(id)) return prev.filter(i => i !== id);
-      if (prev.length >= 2) return [prev[1], id];
-      return [...prev, id];
     });
   };
 
@@ -2054,150 +2000,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {state.activeTab === 'market' && (
-            <motion.div 
-              key="market"
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -100, opacity: 0 }}
-              className="flex h-full min-h-0 w-full flex-col overflow-hidden"
-            >
-                  {/* Header with Parent Slots */}
-                  <div className="space-y-4 border-b border-emerald-100/80 bg-gradient-to-b from-white via-emerald-50/40 to-orange-50/30 p-4 pt-5 text-center">
-                    <div className="flex flex-col items-center">
-                      <Dna className="mb-1 h-10 w-10 text-orange-500 drop-shadow-sm" />
-                      <h3 className="text-lg font-black tracking-widest text-emerald-900 uppercase">Breeding</h3>
-                    </div>
-
-                    <div className="flex items-center justify-center gap-4 py-2">
-                      {[0, 1].map((index) => {
-                        const selectedId = breedingSelection[index];
-                        const slime = state.slimes.find((s) => s.id === selectedId);
-
-                        return (
-                          <div key={index} className="flex flex-col items-center gap-2">
-                            <div
-                              className={`flex h-16 w-16 items-center justify-center rounded-3xl border-2 transition-all ${
-                                slime
-                                  ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50 shadow-md shadow-emerald-900/5'
-                                  : 'border-dashed border-emerald-200 bg-white/80'
-                              }`}
-                            >
-                              {slime ? (
-                                <SlimeStackSprite slime={slime} size="lg" className="shadow-inner" />
-                              ) : (
-                                <Plus className="h-6 w-6 text-gray-300" />
-                              )}
-                            </div>
-                            <div className="text-[9px] font-black uppercase tracking-tight text-gray-400">
-                              {slime ? slime.name : `Parent ${index + 1}`}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {breedingSelection.length < 2 && (
-                      <motion.p
-                        animate={{ opacity: [0.45, 1, 0.45] }}
-                        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
-                        className="text-[10px] font-bold uppercase tracking-wider text-emerald-600/90"
-                      >
-                        select parents
-                      </motion.p>
-                    )}
-                  </div>
-
-                  {/* Scrollable Selection List */}
-                  <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
-                    <div className="grid grid-cols-3 gap-2">
-                      {state.slimes.map((slime) => {
-                        const isSelected = breedingSelection.includes(slime.id);
-                        return (
-                          <button
-                            key={slime.id}
-                            type="button"
-                            onClick={() => toggleBreedingSelection(slime.id)}
-                            className={`relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border-2 p-2 py-3 transition-all ${
-                              isSelected
-                                ? 'border-orange-400 bg-gradient-to-b from-orange-100 to-amber-50 shadow-md ring-2 ring-orange-300/50'
-                                : 'border-emerald-50 bg-white shadow-sm hover:border-emerald-200'
-                            }`}
-                          >
-                            <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
-
-                            <div className="w-full text-center">
-                              <div className="mb-1 truncate text-[9px] font-black leading-none text-gray-800">
-                                {slime.name}
-                              </div>
-
-                              <div className="mt-0.5 flex w-full items-center justify-center gap-1.5 px-0.5">
-                                <div className="inline-flex items-center gap-0.5">
-                                  <Heart className="h-2.5 w-2.5 shrink-0 text-red-500" />
-                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
-                                    {slime.stats.health}
-                                  </span>
-                                </div>
-                                <div className="inline-flex items-center gap-0.5">
-                                  <Sword className="h-2.5 w-2.5 shrink-0 text-orange-500" />
-                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
-                                    {slime.stats.strength}
-                                  </span>
-                                </div>
-                                <div className="inline-flex items-center gap-0.5">
-                                  <Wind className="h-2.5 w-2.5 shrink-0 text-blue-500" />
-                                  <span className="text-[8px] font-black tabular-nums leading-none text-gray-600">
-                                    {slime.stats.agility}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {isSelected && (
-                              <div className="absolute right-1 top-1 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-gradient-to-br from-emerald-500 to-orange-500 text-[7px] font-black text-white shadow-md">
-                                {breedingSelection.indexOf(slime.id) + 1}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {state.slimes.length < 2 && (
-                      <div className="flex flex-col items-center gap-3 rounded-[1.5rem] border-2 border-dashed border-orange-200/80 bg-gradient-to-b from-emerald-50/40 to-orange-50/40 px-4 py-12">
-                        <Ghost className="h-8 w-8 text-emerald-300" />
-                        <p className="text-center text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                          Need more slimes!
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
-                    <div className="mx-auto flex w-full max-w-sm justify-center">
-                      <button
-                        type="button"
-                        onClick={breedSlimes}
-                        disabled={breedingSelection.length !== 2 || state.coins < BREEDING_COST}
-                        className="ui-afford-disabled group flex min-h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
-                      >
-                        <span className="text-sm uppercase leading-tight text-white/95 group-disabled:text-zinc-700">
-                          Breed Slimes
-                        </span>
-                        <span
-                          className={`text-base font-black tabular-nums leading-tight ${
-                            breedingSelection.length === 2 && state.coins < BREEDING_COST
-                              ? 'text-red-600'
-                              : 'text-white/95 group-disabled:text-zinc-800'
-                          }`}
-                        >
-                          {BREEDING_COST.toLocaleString()} 💰
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-            </motion.div>
-          )}
-
           {state.activeTab === 'slimeMarket' && (
             <motion.div
               key="slimeMarket"
@@ -2241,7 +2043,7 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Slime Market */}
+      {/* Bottom Navigation — floats over game; in-flow on Slimes / Slime Market / Arena */}
       <div
         className={
           isGameTab
@@ -2254,11 +2056,6 @@ export default function App() {
           onClick={() => setState(s => ({ ...s, activeTab: 'slimes' }))}
           icon={<Ghost />}
           hasNotification={hasSlimesNotification}
-        />
-        <NavButton 
-          active={state.activeTab === 'market'} 
-          onClick={() => setState(s => ({ ...s, activeTab: 'market', activeSubTab: 'market' }))}
-          icon={<Dna />}
         />
         <NavButton 
           active={state.activeTab === 'game'} 

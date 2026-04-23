@@ -112,7 +112,7 @@ export interface GameState {
   arenaWins: number;
 
   // UI State
-  activeTab: 'game' | 'slimes' | 'market' | 'slimeMarket' | 'arena';
+  activeTab: 'game' | 'slimes' | 'slimeMarket' | 'arena';
   activeSubTab: string;
   hasCompletedOnboarding: boolean;
 
