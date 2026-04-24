@@ -21,7 +21,6 @@ import {
   PartyPopper,
   Plus,
   CircleDollarSign,
-  MessageCircle,
   MoreVertical,
   Volume2,
   Star,
@@ -153,7 +152,6 @@ export default function App() {
   const [pendingEquipSlimeId, setPendingEquipSlimeId] = useState<string | null>(null);
   const [breedingSelection, setBreedingSelection] = useState<[string | null, string | null]>([null, null]);
   const [activeBreedingSlot, setActiveBreedingSlot] = useState<0 | 1>(0);
-  const [onboardingStep, setOnboardingStep] = useState(0);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   /** Short GPU translate when changing world; avoids remounting GameWorld (was causing heavy lag). */
   const [worldNavShiftPx, setWorldNavShiftPx] = useState(0);
@@ -185,11 +183,6 @@ export default function App() {
   const nowMs = Date.now();
 
   const appForeground = useAppForeground();
-
-  const onboardingMessages = [
-    "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
-    "Let's start collecting. Have fun!"
-  ];
 
   const musicTrackUrl =
     state.activeTab === 'arena' && arenaBattleActive ? BOSS_BATTLE_MUSIC_URL : BLOSSOM_MUSIC_URL;
@@ -284,18 +277,6 @@ export default function App() {
       window.removeEventListener('resize', updateFade);
     };
   }, []);
-
-  const completeOnboarding = () => {
-    setState(prev => ({ ...prev, hasCompletedOnboarding: true }));
-  };
-
-  const nextOnboarding = () => {
-    if (onboardingStep < onboardingMessages.length - 1) {
-      setOnboardingStep(prev => prev + 1);
-    } else {
-      completeOnboarding();
-    }
-  };
 
   // Notification Logic
   const canAffordAnyGameUpgrade =
@@ -1241,62 +1222,6 @@ export default function App() {
 
   return (
     <>
-      {/* Onboarding Overlay */}
-      <AnimatePresence>
-        {!state.hasCompletedOnboarding && hasStarted && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] flex items-end justify-center bg-black/50 p-6 pb-24 backdrop-blur-sm"
-          >
-            <motion.div 
-              initial={{ y: 100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="relative w-full overflow-hidden rounded-3xl border border-emerald-100/90 bg-white p-6 pt-7 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/90"
-            >
-              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-400 via-lime-400 to-orange-400" />
-              <div className="absolute -top-16 left-6 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-gradient-to-br from-emerald-400 to-lime-300 shadow-lg shadow-emerald-600/20">
-                <div className="flex gap-2">
-                  <div className="w-2 h-2 bg-white rounded-full relative">
-                    <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-                  </div>
-                  <div className="w-2 h-2 bg-white rounded-full relative">
-                    <div className="absolute top-0.5 right-0.5 w-0.5 h-0.5 bg-black rounded-full" />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="pt-4">
-                <h3 className="text-lg font-black text-gray-800 mb-2 flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5 text-orange-500" />
-                </h3>
-                <p className="text-gray-600 font-medium leading-relaxed mb-6">
-                  {onboardingMessages[onboardingStep]}
-                </p>
-                
-                <div className="flex justify-between items-center">
-                  <div className="flex gap-1">
-                    {onboardingMessages.map((_, i) => (
-                      <div 
-                        key={i} 
-                        className={`h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-6 bg-gradient-to-r from-emerald-500 to-orange-400' : 'w-2 bg-gray-200'}`} 
-                      />
-                    ))}
-                  </div>
-                  <button 
-                    onClick={nextOnboarding}
-                    className="btn-primary-glow rounded-xl px-6 py-3 text-base font-black hover:scale-105 active:scale-95"
-                  >
-                    {onboardingStep === onboardingMessages.length - 1 ? "Got it!" : "Next"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Header Stats — overlays full-screen game; normal flow on other tabs */}
       <div
         className={

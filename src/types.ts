@@ -105,7 +105,6 @@ export interface GameState {
   // UI State
   activeTab: 'game' | 'slimes' | 'market' | 'arena';
   activeSubTab: string;
-  hasCompletedOnboarding: boolean;
 
   /** Selected playfield (0–5). Must be ≤ maxUnlockedGameWorld. */
   gameWorldIndex: number;
@@ -164,7 +163,6 @@ export const INITIAL_STATE: GameState = {
   arenaWins: 0,
   activeTab: 'game',
   activeSubTab: 'collect',
-  hasCompletedOnboarding: false,
   gameWorldIndex: 0,
   maxUnlockedGameWorld: 0,
   worldOrderSandThird: true,
