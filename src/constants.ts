@@ -36,12 +36,12 @@ export const WALKABLE_ORIGIN_Y = (GAME_WORLD_HEIGHT - WALKABLE_HEIGHT) / 2; // 6
 export const WORLD_EDGE_INSET = 20;
 
 /**
- * Max coins on screen — scales with coin cap tier (1–10), capped at 20.
- * Each tier adds 2 coins to the field (2, 4, 6, … 20).
+ * Max coins on screen — scales with coin cap tier (1–10), capped at 50.
+ * Each tier adds 5 coins to the field (5, 10, 15, … 50).
  */
 export function onScreenCoinCap(coinCapLevel: number): number {
-  const raw = 2 * Math.max(1, Math.floor(coinCapLevel));
-  return Math.min(20, raw);
+  const raw = 5 * Math.max(1, Math.floor(coinCapLevel));
+  return Math.min(50, raw);
 }
 
 /**
@@ -79,19 +79,23 @@ export function gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel: number): numb
   return BASE_SLIME_SPEED * (1 + slimeMovementSpeedLevel * 0.03);
 }
 
-/** Time between coin spawns — matches `GameWorld` / automation idle math. */
+/**
+ * Time between coin spawns — matches `GameWorld` / automation idle math.
+ * Exponential decay: 3000 ms at level 0, floored at 80 ms at level 10 (~instant).
+ * Each tier is ~30% faster than the last (multiplier 0.7 per level).
+ */
 export function gameRespawnIntervalMs(respawnTimeLevel: number): number {
-  /** 0.1/tier × 20 ≈ old 0.2/tier × 10 (same min interval at max). */
-  return BASE_RESPAWN_TIME / (1 + respawnTimeLevel * 0.1);
+  return Math.max(80, Math.round(BASE_RESPAWN_TIME * Math.pow(0.7, respawnTimeLevel)));
 }
 
 /**
- * Base coins per collect from the coin-value upgrade **tier** (1–20). Every ~2 tiers +1 💰 so max
- * stays 10 like the old 10-level shop, spread across 20 purchases.
+ * Base coins per collect from the coin-value upgrade **tier**.
+ * Every ~2 tiers +1 💰, with no hard cap so that later worlds (tiers up to 45)
+ * still provide meaningful progression (e.g. tier 45 → ~23 💰).
  */
 export function gameCoinValuePerCollect(coinValueTier: number): number {
   const t = Math.max(1, Math.floor(coinValueTier));
-  return Math.max(1, Math.min(10, Math.ceil(t / 2)));
+  return Math.max(1, Math.ceil(t / 2));
 }
 
 /** How much shorter the spawn interval gets after the next respawn upgrade. */
@@ -260,6 +264,33 @@ export const ARENA_ABILITIES: SlimeArenaAbility[] = [
   'Rush',
   'Harmony',
 ];
+
+/**
+ * In-battle ability firing cycle (ms) — how often the ability procs during a fight.
+ * Weaker abilities have shorter cycles so they fire more frequently; stronger ones fire less often.
+ */
+export const ARENA_ABILITY_BATTLE_COOLDOWN_MS: Record<SlimeArenaAbility, number> = {
+  None:    0,
+  Rally:   8000,   // flat +20 — weakest, fires most often
+  Rush:    9500,   // 55 % of Agility — moderate
+  Smash:   10500,  // 55 % of Strength — moderate
+  Fortify: 12000,  // 50 % of Health — strong scaling
+  Harmony: 14000,  // 15 % of weighted score — strongest scaling, fires least often
+};
+
+/**
+ * Initial delay before the first in-battle ability proc (ms).
+ * Staggered so slimes with the same ability don't fire at identical times;
+ * per-slime id variety adds up to +2 s of additional jitter on top.
+ */
+export const ARENA_ABILITY_BATTLE_INITIAL_DELAY_MS: Record<SlimeArenaAbility, number> = {
+  None:    0,
+  Rally:   3500,
+  Rush:    5000,
+  Smash:   6000,
+  Fortify: 7000,
+  Harmony: 8500,
+};
 
 /** Arena-only skills (separate from coin-field `trait`). Cooldown applies after use in a fight. */
 export const ARENA_ABILITY_META: Record<
@@ -526,7 +557,7 @@ export const UPGRADE_COSTS = {
 export const MAX_GAME_UPGRADE_LEVEL = {
   movementSpeed: 20,
   slimeMovementSpeed: 20,
-  respawnTime: 20,
+  respawnTime: 10,
   coinValue: 20,
   coinCap: 10,
   /** 17 tiers: base 3 slots + 17 = 20 max equipped slimes. */
@@ -545,14 +576,15 @@ export type GameUpgradeLevelCaps = {
 /**
  * Per-world upgrade caps. Index matches `gameWorldIndex` (0–5).
  * Each world's caps are reached to unlock the next world.
+ * Coin respawn and coin cap both max at 10 tiers so they progress together.
  */
 export const MAX_GAME_UPGRADE_LEVEL_BY_WORLD: readonly GameUpgradeLevelCaps[] = [
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 35, coinValue: 35, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 20, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 10, coinValue: 20, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 25, slimeMovementSpeed: 25, respawnTime: 10, coinValue: 25, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 30, slimeMovementSpeed: 30, respawnTime: 10, coinValue: 30, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 10, coinValue: 35, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 40, slimeMovementSpeed: 40, respawnTime: 10, coinValue: 40, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 45, slimeMovementSpeed: 45, respawnTime: 10, coinValue: 45, coinCap: 10, slimeCap: 17 },
 ];
 
 /** Returns the upgrade caps for a given world index (falls back to world-0 caps if out of range). */
@@ -718,11 +750,11 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
   {
     threshold: 100,
     label: 'Collect 100 coins',
-    rewardEggs: 1,
+    rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 0,
+    rewardTickets: 1,
     rewardSlime: false,
-    rewardLabel: '+1 Egg 🥚',
+    rewardLabel: '+1 Ticket 🎟️',
   },
   {
     threshold: 350,

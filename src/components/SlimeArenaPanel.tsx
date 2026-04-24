@@ -1,21 +1,20 @@
-import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Heart, HeartCrack, Sword, Wind, Swords, Coins, Zap } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
 import {
   ARENA_TEAM_SIZE,
   ARENA_ABILITY_META,
-  ARENA_BATTLE_DURATION_MS,
   ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS,
   generateArenaEncounter,
   generateArenaEnemyTeam,
   getArenaStatLabel,
-  resolveArenaBattle,
   isArenaAbilityOnCooldown,
   type ArenaEncounter,
 } from '../constants';
 import { ArenaBattleCanvas } from './ArenaBattleCanvas';
 import { SlimeStackSprite } from './SlimeStackSprite';
+import { useArenaSfx } from '../hooks/useArenaSfx';
 
 type Props = {
   slimes: Slime[];
@@ -35,6 +34,8 @@ type Props = {
     teamIds: [string, string, string, string];
     arenaAbilityUserIds: string[];
   }) => void;
+  sfxEnabled?: boolean;
+  canPlaySfx?: boolean;
 };
 
 function formatCooldown(ms: number): string {
@@ -105,6 +106,8 @@ export function SlimeArenaPanel({
   onBattleActiveChange,
   onReturnToArenaTab,
   onBattleEnd,
+  sfxEnabled = true,
+  canPlaySfx = true,
 }: Props) {
   const [encounterSeed, setEncounterSeed] = useState(() => Math.floor(Math.random() * 1e9));
   const encounter = useMemo(
@@ -115,6 +118,8 @@ export function SlimeArenaPanel({
   const [team, setTeam] = useState<(string | null)[]>(() => emptyTeam());
 
   const [result, setResult] = useState<{ won: boolean; encounter: ArenaEncounter } | null>(null);
+
+  const sfx = useArenaSfx(canPlaySfx, sfxEnabled, 1);
 
   type BattleSession = {
     encounter: ArenaEncounter;
@@ -154,6 +159,29 @@ export function SlimeArenaPanel({
   }, [battleSession]);
 
   useEffect(() => {
+    if (preBattleCountdown === 0 && battleSession) {
+      sfx.onBattleStart();
+    }
+  }, [preBattleCountdown, battleSession, sfx]);
+
+  const resultSfxPlayedRef = useRef(false);
+  useEffect(() => {
+    if (!result) {
+      resultSfxPlayedRef.current = false;
+      return;
+    }
+    if (resultSfxPlayedRef.current) return;
+    resultSfxPlayedRef.current = true;
+    if (result.won) {
+      sfx.onVictory();
+    } else {
+      sfx.onDefeat();
+    }
+    // sfx callbacks are stable (useCallback with [] deps) — omitting from deps is intentional
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
+  useEffect(() => {
     if (preBattleCountdown == null || preBattleCountdown <= 0) return;
     if (optionsMenuOpen) return;
     const t = window.setTimeout(() => {
@@ -163,26 +191,8 @@ export function SlimeArenaPanel({
   }, [preBattleCountdown, optionsMenuOpen]);
   const resolveContextRef = useRef<ResolveContext | null>(null);
   const playerAbilityFiredRef = useRef<Record<string, boolean>>({});
-  /** Wall-time spent in menu pause; subtracted from rAF elapsed so the fight does not end while paused. */
-  const battlePausedMsAccumRef = useRef(0);
-  const battlePauseStartedAtRef = useRef<number | null>(null);
-
-  useLayoutEffect(() => {
-    if (!battleSession) {
-      battlePausedMsAccumRef.current = 0;
-      battlePauseStartedAtRef.current = null;
-      return;
-    }
-    if (preBattleCountdown !== 0) return;
-    if (optionsMenuOpen) {
-      if (battlePauseStartedAtRef.current === null) {
-        battlePauseStartedAtRef.current = performance.now();
-      }
-    } else if (battlePauseStartedAtRef.current !== null) {
-      battlePausedMsAccumRef.current += performance.now() - battlePauseStartedAtRef.current;
-      battlePauseStartedAtRef.current = null;
-    }
-  }, [optionsMenuOpen, battleSession, preBattleCountdown]);
+  /** Set by onSideDefeated to end the fight; null = still running. */
+  const battleEarlyEndRef = useRef<{ won: boolean } | null>(null);
 
   const lineupIds = useMemo(
     () => team.filter((x): x is string => x != null),
@@ -222,15 +232,11 @@ export function SlimeArenaPanel({
     if (!battleSession || preBattleCountdown !== 0) return;
     let rafId = 0;
     let cancelled = false;
-    const start = performance.now();
-    const step = (t: number) => {
+    const step = (_t: number) => {
       if (cancelled) return;
-      const wallElapsed = t - start;
-      const currentMenuPause =
-        battlePauseStartedAtRef.current !== null ? t - battlePauseStartedAtRef.current : 0;
-      const fightElapsed = wallElapsed - battlePausedMsAccumRef.current - currentMenuPause;
-      const p = Math.min(1, fightElapsed / ARENA_BATTLE_DURATION_MS);
-      if (p < 1) {
+      const earlyEnd = battleEarlyEndRef.current;
+      // Battle ends ONLY when one team is fully eliminated (earlyEnd set by onSideDefeated).
+      if (!earlyEnd) {
         rafId = requestAnimationFrame(step);
       } else {
         const ctx = resolveContextRef.current;
@@ -240,12 +246,7 @@ export function SlimeArenaPanel({
         if (!ctx) return;
         const abilityUsed: Record<string, boolean> = { ...playerAbilityFiredRef.current };
         playerAbilityFiredRef.current = {};
-        const { won } = resolveArenaBattle(
-          ctx.encounter,
-          [ctx.s0, ctx.s1, ctx.s2, ctx.s3],
-          abilityUsed,
-          ctx.arenaWinsBeforeBattle
-        );
+        const won = earlyEnd.won;
         const arenaAbilityUserIds = Object.keys(abilityUsed).filter((id) => abilityUsed[id]);
         setResult({ won, encounter: ctx.encounter });
         onBattleEnd({
@@ -277,6 +278,7 @@ export function SlimeArenaPanel({
 
     playerAbilityFiredRef.current = {};
     setLiveAbilityFired({});
+    battleEarlyEndRef.current = null;
     resolveContextRef.current = {
       encounter,
       s0,
@@ -375,10 +377,7 @@ export function SlimeArenaPanel({
       </div>
 
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-2">
-        <p className="mb-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-800">Your slimes</p>
-        <p className="mb-1.5 text-[8px] font-semibold text-emerald-800/70">
-          Tap to fill your team in order (slot 1 → {ARENA_TEAM_SIZE}).
-        </p>
+        <p className="mb-1.5 text-[8px] font-black uppercase tracking-wider text-emerald-800">Your slimes</p>
         <div className="grid grid-cols-3 gap-1.5">
           {slimes.map((slime) => {
             const inLineup = lineupIds.includes(slime.id);
@@ -482,9 +481,17 @@ export function SlimeArenaPanel({
                 enemies={battleSession.enemies}
                 playerAbilityFiredRef={playerAbilityFiredRef}
                 onAbilityFired={(id) => setLiveAbilityFired((p) => ({ ...p, [id]: true }))}
+                onSideDefeated={(side) => {
+                  if (battleEarlyEndRef.current === null) {
+                    battleEarlyEndRef.current = { won: side === 'enemy' };
+                  }
+                }}
                 paused={
                   (preBattleCountdown != null && preBattleCountdown > 0) || optionsMenuOpen
                 }
+                onHit={sfx.onHit}
+                onDodge={sfx.onDodge}
+                onAbility={sfx.onAbility}
               />
             </div>
             <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 py-2">

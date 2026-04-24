@@ -14,6 +14,9 @@ import {
   ARENA_TEAM_SIZE,
   slimeAttackCooldownMs,
   slimeAgilityDodgeChance,
+  slimeIdVariety,
+  ARENA_ABILITY_BATTLE_COOLDOWN_MS,
+  ARENA_ABILITY_BATTLE_INITIAL_DELAY_MS,
   type ArenaEnemyDisplay,
 } from '../constants';
 import { drawSlimeSpriteStack, loadSlimeSpriteImageCache } from '../slimeSprites';
@@ -346,27 +349,17 @@ function drawHpBarArena(
   ctx.restore();
 }
 
-/** Same 30s / 5s “trait ult” bar as `GameWorld` (orange during burst, white during cooldown). */
-function drawArenaUltBarLikeMainScreen(
+/** Per-slime ability charge bar (fills white while charging, flashes orange when it fires). */
+function drawArenaUltBar(
   ctx: CanvasRenderingContext2D,
-  timeNow: number,
+  chargeProgress: number,
+  isFiring: boolean,
   barY: number
 ) {
-  const cycleTime = 30000;
-  const activeDuration = 5000;
-  const isTraitCycleActive = (timeNow % cycleTime) < activeDuration;
   const barWidth = 24;
   const barHeight = 3;
-  const t = timeNow % cycleTime;
-  let progress = 0;
-  let color = '#f97316';
-  if (isTraitCycleActive) {
-    progress = t / activeDuration;
-  } else {
-    progress = (t - activeDuration) / (cycleTime - activeDuration);
-    color = '#FFFFFF';
-  }
-  const fillW = barWidth * Math.max(0, Math.min(1, progress));
+  const fill = Math.max(0, Math.min(1, isFiring ? 1 : chargeProgress));
+  const color = isFiring ? '#f97316' : '#FFFFFF';
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.beginPath();
@@ -377,7 +370,7 @@ function drawArenaUltBarLikeMainScreen(
   ctx.stroke();
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.roundRect(-barWidth / 2, barY, fillW, barHeight, 2);
+  ctx.roundRect(-barWidth / 2, barY, barWidth * fill, barHeight, 2);
   ctx.fill();
   ctx.restore();
 }
@@ -387,8 +380,14 @@ type Props = {
   enemies: ArenaEnemyDisplay[];
   playerAbilityFiredRef: React.MutableRefObject<Record<string, boolean>>;
   onAbilityFired?: (id: string) => void;
+  /** Fires once when all slimes on one side reach 0 HP. */
+  onSideDefeated?: (side: 'player' | 'enemy') => void;
   /** When true, the canvas still renders but slime movement and melee do not advance. */
   paused?: boolean;
+  /** SFX callbacks — called from the game loop whenever the corresponding event fires. */
+  onHit?: () => void;
+  onDodge?: () => void;
+  onAbility?: () => void;
 };
 
 export function ArenaBattleCanvas({
@@ -396,15 +395,25 @@ export function ArenaBattleCanvas({
   enemies,
   playerAbilityFiredRef,
   onAbilityFired,
+  onSideDefeated,
   paused = false,
+  onHit,
+  onDodge,
+  onAbility,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dims = useRef({ width: 400, height: 320 });
   const slimesRef = useRef<Record<string, SlimePos>>({});
   const lastAbilityProcRef = useRef<Record<string, number>>({});
-  /** Initialized on first sim tick so the arena does not fire ults for every 30s bucket before mount. */
-  const ultBarCycleIdxRef = useRef<number | null>(null);
+  /** Battle start time (ms); set on first sim tick for per-ability initial delay calculation. */
+  const battleStartRef = useRef<number | null>(null);
+  /** Per-slime wall-clock timestamp when the next in-battle ability proc fires. */
+  const slimeAbilityNextProcRef = useRef<Record<string, number>>({});
+  /** Per-slime wall-clock timestamp when the current charge cycle started (for 0-to-full bar). */
+  const chargeStartRef = useRef<Record<string, number>>({});
+  /** Guards so onSideDefeated fires at most once per team per battle. */
+  const sideDefeatedFiredRef = useRef({ player: false, enemy: false });
   /** Decorative 0–1 HP (outcome still uses stat resolution in App). */
   const hpPlayerRef = useRef<number[]>(Array.from({ length: ARENA_TEAM_SIZE }, () => 1));
   const hpEnemyRef = useRef<number[]>(Array.from({ length: ARENA_TEAM_SIZE }, () => 1));
@@ -421,6 +430,9 @@ export function ArenaBattleCanvas({
     enemies,
   });
   propsRef.current = { playerSlimes, enemies };
+
+  const sfxRef = useRef({ onHit, onDodge, onAbility });
+  sfxRef.current = { onHit, onDodge, onAbility };
 
   const slimeSpriteCacheRef = useRef<Map<string, HTMLImageElement> | null>(null);
   useEffect(() => {
@@ -644,23 +656,45 @@ export function ArenaBattleCanvas({
     };
 
     pl.forEach((s, i) => {
-      const foe = en[i];
-      const fp = foe ? slimesRef.current[foe.id] : undefined;
-      const opp = fp ? { x: fp.x, y: fp.y } : null;
+      if ((hpPlayerRef.current[i] ?? 1) <= 0) return;
+      const sPos = slimesRef.current[s.id];
+      let nearestOpp: { x: number; y: number } | null = null;
+      if (sPos) {
+        let nearestDist = Infinity;
+        en.forEach((foe, j) => {
+          if ((hpEnemyRef.current[j] ?? 1) <= 0) return;
+          const foePos = slimesRef.current[foe.id];
+          if (!foePos) return;
+          const d = Math.hypot(sPos.x - foePos.x, sPos.y - foePos.y);
+          if (d < nearestDist) { nearestDist = d; nearestOpp = { x: foePos.x, y: foePos.y }; }
+        });
+      }
       const anchorLeft = arenaVerticalSideAnchor(width, height, i, pl.length, 'left', scaledTopPad);
-      updateSlime(s, i, pl, anchorLeft, 'left', opp);
+      updateSlime(s, i, pl, anchorLeft, 'left', nearestOpp);
     });
     enemyTeam.forEach((slime, i) => {
-      const pal = pl[i];
-      const pp = pal ? slimesRef.current[pal.id] : undefined;
-      const opp = pp ? { x: pp.x, y: pp.y } : null;
+      if ((hpEnemyRef.current[i] ?? 1) <= 0) return;
+      const ePos = slimesRef.current[slime.id];
+      let nearestOpp: { x: number; y: number } | null = null;
+      if (ePos) {
+        let nearestDist = Infinity;
+        pl.forEach((pal, j) => {
+          if ((hpPlayerRef.current[j] ?? 1) <= 0) return;
+          const pPos = slimesRef.current[pal.id];
+          if (!pPos) return;
+          const d = Math.hypot(ePos.x - pPos.x, ePos.y - pPos.y);
+          if (d < nearestDist) { nearestDist = d; nearestOpp = { x: pPos.x, y: pPos.y }; }
+        });
+      }
       const anchorRight = arenaVerticalSideAnchor(width, height, i, enemyTeam.length, 'right', scaledTopPad);
-      updateSlime(slime, i + 10, enemyTeam, anchorRight, 'right', opp);
+      updateSlime(slime, i + 10, enemyTeam, anchorRight, 'right', nearestOpp);
     });
 
     const separateOpposing = () => {
       for (let a = 0; a < pl.length; a++) {
+        if ((hpPlayerRef.current[a] ?? 1) <= 0) continue;
         for (let b = 0; b < en.length; b++) {
+          if ((hpEnemyRef.current[b] ?? 1) <= 0) continue;
           const pa = slimesRef.current[pl[a]!.id];
           const pb = slimesRef.current[en[b]!.id];
           if (!pa || !pb) continue;
@@ -714,79 +748,139 @@ export function ArenaBattleCanvas({
       }
     });
 
-    // Per-slime independent normal attacks
-    for (let i = 0; i < Math.min(pl.length, en.length); i++) {
-      const pSlime = pl[i]!;
-      const eDisp = en[i]!;
-      const eSlime = enemyTeam[i]!;
+    // Per-slime independent normal attacks — each slime targets the nearest living opponent in range
+
+    // Player slimes attack
+    for (let pi = 0; pi < pl.length; pi++) {
+      if ((hpPlayerRef.current[pi] ?? 1) <= 0) continue;
+      const pSlime = pl[pi]!;
       const pPos = slimesRef.current[pSlime.id];
-      const ePos = slimesRef.current[eDisp.id];
-      if (!pPos || !ePos) continue;
-      const dist = Math.hypot(pPos.x - ePos.x, pPos.y - ePos.y);
-      const inRange = dist >= scaledMinAttack && dist <= scaledMaxAttack;
-      if (!inRange) continue;
+      if (!pPos) continue;
+      if (timeNow < (slimeNextAttackRef.current[pSlime.id] ?? 0) || !meleeSwingReady(pSlime.id)) continue;
 
-      // Player slime attacks
-      if (timeNow >= (slimeNextAttackRef.current[pSlime.id] ?? 0) && meleeSwingReady(pSlime.id)) {
-        const dodgeRoll = Math.random();
-        const eDodgeChance = slimeAgilityDodgeChance(eSlime.statLevels.agility);
-        const fullyDodged = dodgeRoll < eDodgeChance;
-        const partialDodge = !fullyDodged && dodgeRoll < eDodgeChance * 2.5;
-        const dmgMult = fullyDodged ? 0 : partialDodge ? 0.5 : 1;
-        const mx = ePos.x - pPos.x;
-        const my = ePos.y - pPos.y;
-        const ml = Math.hypot(mx, my) || 1;
-        meleeAttackAnimRef.current[pSlime.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
-        if (fullyDodged) {
-          dodgeFlashUntilRef.current[eDisp.id] = timeNow + 350;
-        } else {
-          const pStr = Math.max(2, pSlime.stats.strength);
-          const eHealth = Math.max(5, eSlime.stats.health);
-          const dmg = ARENA_MELEE_HIT_DAMAGE * (pStr / 10) * (10 / eHealth) * dmgMult;
-          hpEnemyRef.current[i] = Math.max(0, (hpEnemyRef.current[i] ?? 1) - dmg);
-          hitFlashUntilRef.current[eDisp.id] = timeNow + 160;
-        }
-        slimeNextAttackRef.current[pSlime.id] = timeNow + slimeAttackCooldownMs(pSlime);
+      let targetEi = -1;
+      let targetDist = Infinity;
+      for (let ei = 0; ei < en.length; ei++) {
+        if ((hpEnemyRef.current[ei] ?? 1) <= 0) continue;
+        const ePos = slimesRef.current[en[ei]!.id];
+        if (!ePos) continue;
+        const d = Math.hypot(pPos.x - ePos.x, pPos.y - ePos.y);
+        if (d >= scaledMinAttack && d <= scaledMaxAttack && d < targetDist) { targetEi = ei; targetDist = d; }
       }
+      if (targetEi < 0) continue;
 
-      // Enemy slime attacks
-      if (timeNow >= (slimeNextAttackRef.current[eDisp.id] ?? 0) && meleeSwingReady(eDisp.id)) {
-        const dodgeRoll = Math.random();
-        const pDodgeChance = slimeAgilityDodgeChance(pSlime.statLevels.agility);
-        const fullyDodged = dodgeRoll < pDodgeChance;
-        const partialDodge = !fullyDodged && dodgeRoll < pDodgeChance * 2.5;
-        const dmgMult = fullyDodged ? 0 : partialDodge ? 0.5 : 1;
-        const mx = pPos.x - ePos.x;
-        const my = pPos.y - ePos.y;
-        const ml = Math.hypot(mx, my) || 1;
-        meleeAttackAnimRef.current[eDisp.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
-        if (fullyDodged) {
-          dodgeFlashUntilRef.current[pSlime.id] = timeNow + 350;
-        } else {
-          const eStr = Math.max(2, eSlime.stats.strength);
-          const pHealth = Math.max(5, pSlime.stats.health);
-          const dmg = ARENA_MELEE_HIT_DAMAGE * (eStr / 10) * (10 / pHealth) * dmgMult;
-          hpPlayerRef.current[i] = Math.max(0, (hpPlayerRef.current[i] ?? 1) - dmg);
-          hitFlashUntilRef.current[pSlime.id] = timeNow + 160;
-        }
-        slimeNextAttackRef.current[eDisp.id] = timeNow + slimeAttackCooldownMs(eSlime);
+      const eDisp = en[targetEi]!;
+      const eSlime = enemyTeam[targetEi]!;
+      const ePos = slimesRef.current[eDisp.id]!;
+      const dodgeRoll = Math.random();
+      const eDodgeChance = slimeAgilityDodgeChance(eSlime.statLevels.agility);
+      const fullyDodged = dodgeRoll < eDodgeChance;
+      const partialDodge = !fullyDodged && dodgeRoll < eDodgeChance * 2.5;
+      const dmgMult = fullyDodged ? 0 : partialDodge ? 0.5 : 1;
+      const mx = ePos.x - pPos.x;
+      const my = ePos.y - pPos.y;
+      const ml = Math.hypot(mx, my) || 1;
+      meleeAttackAnimRef.current[pSlime.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
+      if (fullyDodged) {
+        dodgeFlashUntilRef.current[eDisp.id] = timeNow + 350;
+        sfxRef.current.onDodge?.();
+      } else {
+        const pStr = Math.max(2, pSlime.stats.strength);
+        const eHealth = Math.max(5, eSlime.stats.health);
+        const dmg = ARENA_MELEE_HIT_DAMAGE * (pStr / 10) * (10 / eHealth) * dmgMult;
+        hpEnemyRef.current[targetEi] = Math.max(0, (hpEnemyRef.current[targetEi] ?? 1) - dmg);
+        hitFlashUntilRef.current[eDisp.id] = timeNow + 160;
+        sfxRef.current.onHit?.();
+      }
+      slimeNextAttackRef.current[pSlime.id] = timeNow + slimeAttackCooldownMs(pSlime);
+    }
+
+    // Enemy slimes attack
+    for (let ei = 0; ei < en.length; ei++) {
+      if ((hpEnemyRef.current[ei] ?? 1) <= 0) continue;
+      const eDisp = en[ei]!;
+      const eSlime = enemyTeam[ei]!;
+      const ePos = slimesRef.current[eDisp.id];
+      if (!ePos) continue;
+      if (timeNow < (slimeNextAttackRef.current[eDisp.id] ?? 0) || !meleeSwingReady(eDisp.id)) continue;
+
+      let targetPi = -1;
+      let targetDist = Infinity;
+      for (let pi = 0; pi < pl.length; pi++) {
+        if ((hpPlayerRef.current[pi] ?? 1) <= 0) continue;
+        const pPos = slimesRef.current[pl[pi]!.id];
+        if (!pPos) continue;
+        const d = Math.hypot(ePos.x - pPos.x, ePos.y - pPos.y);
+        if (d >= scaledMinAttack && d <= scaledMaxAttack && d < targetDist) { targetPi = pi; targetDist = d; }
+      }
+      if (targetPi < 0) continue;
+
+      const pSlime = pl[targetPi]!;
+      const pPos = slimesRef.current[pSlime.id]!;
+      const dodgeRoll = Math.random();
+      const pDodgeChance = slimeAgilityDodgeChance(pSlime.statLevels.agility);
+      const fullyDodged = dodgeRoll < pDodgeChance;
+      const partialDodge = !fullyDodged && dodgeRoll < pDodgeChance * 2.5;
+      const dmgMult = fullyDodged ? 0 : partialDodge ? 0.5 : 1;
+      const mx = pPos.x - ePos.x;
+      const my = pPos.y - ePos.y;
+      const ml = Math.hypot(mx, my) || 1;
+      meleeAttackAnimRef.current[eDisp.id] = { startMs: timeNow, tx: mx / ml, ty: my / ml };
+      if (fullyDodged) {
+        dodgeFlashUntilRef.current[pSlime.id] = timeNow + 350;
+        sfxRef.current.onDodge?.();
+      } else {
+        const eStr = Math.max(2, eSlime.stats.strength);
+        const pHealth = Math.max(5, pSlime.stats.health);
+        const dmg = ARENA_MELEE_HIT_DAMAGE * (eStr / 10) * (10 / pHealth) * dmgMult;
+        hpPlayerRef.current[targetPi] = Math.max(0, (hpPlayerRef.current[targetPi] ?? 1) - dmg);
+        hitFlashUntilRef.current[pSlime.id] = timeNow + 160;
+        sfxRef.current.onHit?.();
+      }
+      slimeNextAttackRef.current[eDisp.id] = timeNow + slimeAttackCooldownMs(eSlime);
+    }
+    // Initialise per-ability battle proc timers on first tick (staggered per ability + id variety)
+    if (battleStartRef.current === null) {
+      battleStartRef.current = timeNow;
+    }
+    const bStart = battleStartRef.current;
+    for (const s of [...pl, ...enemyTeam]) {
+      if (s.arenaAbility === 'None') continue;
+      if (!(s.id in slimeAbilityNextProcRef.current)) {
+        const baseDelay = ARENA_ABILITY_BATTLE_INITIAL_DELAY_MS[s.arenaAbility];
+        const variety = slimeIdVariety(s.id) * 2000;
+        slimeAbilityNextProcRef.current[s.id] = bStart + baseDelay + variety;
+        chargeStartRef.current[s.id] = bStart;
       }
     }
-    const ultCycleTimeMs = 30000;
-    const ultBarCycleIdx = Math.floor(timeNow / ultCycleTimeMs);
-    if (ultBarCycleIdxRef.current === null) {
-      ultBarCycleIdxRef.current = ultBarCycleIdx;
-    } else if (ultBarCycleIdx > ultBarCycleIdxRef.current) {
-      ultBarCycleIdxRef.current = ultBarCycleIdx;
-      for (const s of pl) {
-        if (s.arenaAbility === 'None') continue;
-        lastAbilityProcRef.current[s.id] = timeNow;
+
+    // Per-slime independent ability procs
+    for (const s of [...pl, ...enemyTeam]) {
+      if (s.arenaAbility === 'None') continue;
+      const nextProc = slimeAbilityNextProcRef.current[s.id];
+      if (nextProc === undefined || timeNow < nextProc) continue;
+      lastAbilityProcRef.current[s.id] = timeNow;
+      const cdMs = ARENA_ABILITY_BATTLE_COOLDOWN_MS[s.arenaAbility];
+      slimeAbilityNextProcRef.current[s.id] = timeNow + cdMs;
+      chargeStartRef.current[s.id] = timeNow;
+      sfxRef.current.onAbility?.();
+      if (pl.some((p) => p.id === s.id)) {
         playerAbilityFiredRef.current[s.id] = true;
         onAbilityFired?.(s.id);
       }
-      for (const s of enemyTeam) {
-        if (s.arenaAbility === 'None') continue;
-        lastAbilityProcRef.current[s.id] = timeNow;
+    }
+
+    // Side-defeated check — fires at most once per side per battle
+    {
+      const allPlayerDead = hpPlayerRef.current.slice(0, pl.length).every((hp) => hp <= 0);
+      const allEnemyDead = hpEnemyRef.current.slice(0, en.length).every((hp) => hp <= 0);
+      if (allPlayerDead && !sideDefeatedFiredRef.current.player) {
+        sideDefeatedFiredRef.current.player = true;
+        onSideDefeated?.('player');
+      }
+      if (allEnemyDead && !sideDefeatedFiredRef.current.enemy) {
+        sideDefeatedFiredRef.current.enemy = true;
+        onSideDefeated?.('enemy');
       }
     }
 
@@ -992,7 +1086,15 @@ export function ArenaBattleCanvas({
       const hpY = hasArena ? -drawRadius - 17 : -drawRadius - 8;
 
       if (hasArena) {
-        drawArenaUltBarLikeMainScreen(ctx, timeNow, energyY);
+        const nextProc = slimeAbilityNextProcRef.current[slime.id];
+        const chargeStart = chargeStartRef.current[slime.id];
+        const totalChargeTime =
+          nextProc !== undefined && chargeStart !== undefined
+            ? Math.max(1, nextProc - chargeStart)
+            : 1;
+        const elapsed = chargeStart !== undefined ? Math.max(0, timeNow - chargeStart) : 0;
+        const chargeProgress = Math.min(1, elapsed / totalChargeTime);
+        drawArenaUltBar(ctx, chargeProgress, procRaw > 0, energyY);
       }
 
       drawHpBarArena(ctx, hpRatio, hpY, side);
@@ -1002,11 +1104,13 @@ export function ArenaBattleCanvas({
 
     pl.forEach((s, i) => {
       const pos = slimesRef.current[s.id];
-      if (pos) drawSlimeBody(s, pos, hpPlayerRef.current[i] ?? 1, 'player');
+      const hp = hpPlayerRef.current[i] ?? 1;
+      if (pos && hp > 0) drawSlimeBody(s, pos, hp, 'player');
     });
     en.forEach((e, i) => {
       const pos = slimesRef.current[e.id];
-      if (pos) drawSlimeBody(enemyAsSlime(e), pos, hpEnemyRef.current[i] ?? 1, 'enemy');
+      const hp = hpEnemyRef.current[i] ?? 1;
+      if (pos && hp > 0) drawSlimeBody(enemyAsSlime(e), pos, hp, 'enemy');
     });
   });
 

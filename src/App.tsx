@@ -140,6 +140,8 @@ export default function App() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [hasStarted, setHasStarted] = useState(false);
   const [isUpgradesOpen, setIsUpgradesOpen] = useState(false);
+  const [showLockedNextWorldHint, setShowLockedNextWorldHint] = useState(false);
+  const lockedHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const upgradesScrollRef = useRef<HTMLDivElement>(null);
   const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const collectionScrollRef = useRef<HTMLDivElement>(null);
@@ -561,14 +563,14 @@ export default function App() {
 
   /**
    * Real-time silent idle accumulation while the player is on a non-game tab.
-   * Ticks every 5 seconds, credits idle coins without playing any sound, and
+   * Ticks every second, credits idle coins without playing any sound, and
    * advances lastGameTabExitTimeRef so the return-to-game handler only needs
    * to cover the remaining partial interval.
    */
   useEffect(() => {
     if (isLoading || !hasStarted || state.activeTab === 'game') return;
 
-    const TICK_MS = 5000;
+    const TICK_MS = 1000;
 
     const interval = setInterval(() => {
       const now = Date.now();
@@ -578,11 +580,13 @@ export default function App() {
       const elapsed = now - since;
       if (elapsed < 1000) return;
 
-      lastGameTabExitTimeRef.current = now;
-
       const prev = stateRef.current;
       const idleGain = computeOfflineIdleGain(prev.upgrades, elapsed);
+      // Only advance the timestamp when we actually credit coins, so fractional
+      // elapsed time keeps accumulating until a full coin can be awarded.
       if (idleGain.currencyEarned <= 0) return;
+
+      lastGameTabExitTimeRef.current = now;
 
       setState((s) => ({
         ...s,
@@ -2239,23 +2243,66 @@ export default function App() {
 
                 {state.gameWorldIndex === state.maxUnlockedGameWorld &&
                   state.maxUnlockedGameWorld < GAME_WORLDS.length - 1 && (
-                    <div
-                      className="pointer-events-none absolute right-2 top-1/2 z-[38] -translate-y-1/2"
-                      role="img"
-                      aria-label="Next area locked. Max all game upgrades in this world to unlock."
-                    >
-                      <div className="relative rounded-full border-2 border-gray-400/50 bg-gray-500/15 p-2 shadow-inner ring-1 ring-gray-400/30 backdrop-blur-sm">
-                        <ChevronRight
-                          className="h-7 w-7 text-gray-400/90"
-                          strokeWidth={2.25}
-                          aria-hidden
-                        />
-                        <div className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/40 bg-gray-600 shadow-sm">
-                          <Lock className="h-2.5 w-2.5 text-gray-100" strokeWidth={2.5} aria-hidden />
+                    <>
+                      <AnimatePresence>
+                        {showLockedNextWorldHint && (
+                          <motion.div
+                            key="locked-next-world-hint"
+                            initial={{ opacity: 0, x: 8, scale: 0.88 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 8, scale: 0.88 }}
+                            transition={{ duration: 0.18 }}
+                            className="pointer-events-none absolute right-14 top-1/2 z-[39] -translate-y-1/2 max-w-[160px] rounded-xl border border-gray-400/40 bg-gray-800/80 px-2.5 py-1.5 text-center text-[10px] font-bold leading-tight tracking-wide text-gray-100 shadow-lg backdrop-blur-sm"
+                          >
+                            Max all upgrades to unlock the next area
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <button
+                        type="button"
+                        aria-label="Next area locked. Max all game upgrades in this world to unlock."
+                        onClick={() => {
+                          if (lockedHintTimerRef.current) clearTimeout(lockedHintTimerRef.current);
+                          setShowLockedNextWorldHint(true);
+                          lockedHintTimerRef.current = setTimeout(() => setShowLockedNextWorldHint(false), 2500);
+                        }}
+                        className="pointer-events-auto absolute right-2 top-1/2 z-[38] -translate-y-1/2 active:scale-95"
+                      >
+                        <div className="relative rounded-full border-2 border-gray-400/50 bg-gray-500/15 p-2 shadow-inner ring-1 ring-gray-400/30 backdrop-blur-sm">
+                          <ChevronRight
+                            className="h-7 w-7 text-gray-400/90"
+                            strokeWidth={2.25}
+                            aria-hidden
+                          />
+                          <div className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/40 bg-gray-600 shadow-sm">
+                            <Lock className="h-2.5 w-2.5 text-gray-100" strokeWidth={2.5} aria-hidden />
+                          </div>
                         </div>
+                      </button>
+                    </>
+                  )}
+
+                {state.gameWorldIndex === GAME_WORLDS.length - 1 && (
+                  <div
+                    className="pointer-events-none absolute right-2 top-1/2 z-[38] -translate-y-1/2 flex flex-col items-center gap-1"
+                    role="img"
+                    aria-label="Coming soon"
+                  >
+                    <div className="relative rounded-full border-2 border-gray-400/30 bg-gray-500/10 p-2 shadow-inner ring-1 ring-gray-400/20 backdrop-blur-sm">
+                      <ChevronRight
+                        className="h-7 w-7 text-gray-400/50"
+                        strokeWidth={2.25}
+                        aria-hidden
+                      />
+                      <div className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500/30 bg-gray-600/80 shadow-sm">
+                        <Lock className="h-2.5 w-2.5 text-gray-300/70" strokeWidth={2.5} aria-hidden />
                       </div>
                     </div>
-                  )}
+                    <span className="rounded-full bg-gray-800/50 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-gray-400/70 backdrop-blur-sm">
+                      COMING SOON
+                    </span>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -2483,10 +2530,6 @@ export default function App() {
 
                   <div className="shrink-0 border-t border-emerald-100/80 bg-gradient-to-r from-white via-emerald-50/30 to-orange-50/40 px-4 py-3 backdrop-blur-md">
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-2">
-                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-purple-600/90">
-                        <Ticket className="h-3.5 w-3.5" aria-hidden />
-                        <span>Costs tickets — earn 1 every 3 arena wins</span>
-                      </div>
                       <button
                         type="button"
                         onClick={breedSlimes}
@@ -2529,6 +2572,8 @@ export default function App() {
                 onBattleActiveChange={setArenaBattleActive}
                 onReturnToArenaTab={() => setState((s) => ({ ...s, activeTab: 'arena' }))}
                 onBattleEnd={handleArenaBattleEnd}
+                sfxEnabled={state.settings.sfxEnabled}
+                canPlaySfx={hasStarted && appForeground}
               />
             </motion.div>
           )}
@@ -2732,6 +2777,17 @@ export default function App() {
                     maxed={isMaxed('slimeCap')}
                   />
                   )}
+                      {!isCompletedLevel && state.maxUnlockedGameWorld < GAME_WORLDS.length - 1 && (
+                        <div className="mt-0.5 rounded-xl border border-amber-200/70 bg-gradient-to-br from-amber-50/90 to-orange-50/80 px-3 py-2.5">
+                          <p className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
+                            <Lock className="h-3.5 w-3.5 shrink-0 text-amber-500" strokeWidth={2.5} />
+                            Max all upgrades to unlock the next area
+                          </p>
+                          <p className="mt-0.5 text-[10px] leading-snug text-amber-600/80">
+                            Once every upgrade reaches its cap for this world, you'll be able to move on.
+                          </p>
+                        </div>
+                      )}
                       </>
                     );
                   })()}

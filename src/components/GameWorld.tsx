@@ -41,6 +41,7 @@ interface Effect {
   vx?: number;
   vy?: number;
   size?: number;
+  scale?: number;
 }
 
 interface GroundTrailParticle {
@@ -839,14 +840,21 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       const distToPlayer = Math.hypot(coin.x - playerRef.current.x, coin.y - playerRef.current.y);
       if (distToPlayer < collectionRadius) {
         collectedIds.push(coin.id);
+        const flyFrames = 75;
+        const cam = cameraRef.current;
+        const targetWx = cam.x + width * 0.40;
+        const targetWy = cam.y + 8;
         effectsRef.current.push({
           id: nextEffectId.current++,
           type: 'collect',
           x: coin.x,
           y: coin.y,
           color: '#FACC15',
-          life: 30,
-          maxLife: 30
+          life: flyFrames,
+          maxLife: flyFrames,
+          vx: (targetWx - coin.x) / flyFrames,
+          vy: (targetWy - coin.y) / flyFrames,
+          scale: 1.0,
         });
         return;
       }
@@ -859,14 +867,21 @@ export const GameWorld: React.FC<GameWorldProps> = ({
           const slimeRadius = BASE_SLIME_COLLECT_RADIUS * (1 + globalRadiusBuff);
           if (distToSlime < slimeRadius) {
             collectedIds.push(coin.id);
+            const flyFrames = 75;
+            const cam = cameraRef.current;
+            const targetWx = cam.x + width * 0.40;
+            const targetWy = cam.y + 8;
             effectsRef.current.push({
               id: nextEffectId.current++,
               type: 'collect',
               x: coin.x,
               y: coin.y,
               color: '#FACC15',
-              life: 30,
-              maxLife: 30
+              life: flyFrames,
+              maxLife: flyFrames,
+              vx: (targetWx - coin.x) / flyFrames,
+              vy: (targetWy - coin.y) / flyFrames,
+              scale: 1.0,
             });
             break;
           }
@@ -893,7 +908,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     // Update Effects
     effectsRef.current = effectsRef.current.filter(e => {
       e.life -= 1;
-      if (e.type === 'collect') e.y -= 1;
+      if (e.type === 'collect') {
+        e.scale = e.life / e.maxLife;
+      }
       if (e.vx !== undefined) e.x += e.vx;
       if (e.vy !== undefined) e.y += e.vy;
       return e.life > 0;
@@ -1266,10 +1283,25 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       ctx.globalAlpha = alpha;
       
       if (e.type === 'collect') {
-        ctx.strokeStyle = e.color;
+        const s = e.scale ?? alpha;
+        ctx.translate(e.x, e.y);
+        ctx.scale(s, s);
+        // Coin body
+        ctx.fillStyle = '#FACC15';
         ctx.beginPath();
-        ctx.arc(e.x, e.y, (1 - alpha) * 20, 0, Math.PI * 2);
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner ring
+        ctx.strokeStyle = '#FDE68A';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 5, 0, Math.PI * 2);
         ctx.stroke();
+        // Highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.beginPath();
+        ctx.arc(-2, -2.5, 2.5, 0, Math.PI * 2);
+        ctx.fill();
       } else if (e.type === 'trait_speed') {
         // Motion trails
         ctx.strokeStyle = e.color;
