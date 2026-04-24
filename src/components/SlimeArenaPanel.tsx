@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, HeartCrack, Sword, Wind, Swords, Trophy, ChevronsRight, FastForward } from 'lucide-react';
+import { Heart, HeartCrack, Sword, Wind, Swords, Trophy, ChevronsRight, FastForward, LogOut } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
 import {
   ARENA_TEAM_SIZE,
@@ -106,9 +106,13 @@ export function SlimeArenaPanel({
   const [liveAbilityFired, setLiveAbilityFired] = useState<Record<string, boolean>>({});
   const [battleSpeed, setBattleSpeed] = useState<1 | 2>(1);
   const [liveStats, setLiveStats] = useState<ArenaBattleStats>(INITIAL_LIVE_STATS);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   useEffect(() => {
-    if (!battleSession) setLiveStats(INITIAL_LIVE_STATS);
+    if (!battleSession) {
+      setLiveStats(INITIAL_LIVE_STATS);
+      setShowExitConfirm(false);
+    }
   }, [battleSession]);
 
   useEffect(() => {
@@ -296,6 +300,18 @@ export function SlimeArenaPanel({
     setResult({ won, encounter: ctx.encounter });
     onBattleEnd({ won, encounter: ctx.encounter, teamIds: ctx.teamIds, arenaAbilityUserIds });
   }, [slimeArenaAbilityCooldownUntil, now, onBattleEnd]);
+
+  const exitBattle = useCallback(() => {
+    playerAbilityFiredRef.current = {};
+    battleEarlyEndRef.current = null;
+    resolveContextRef.current = null;
+    setBattleSession(null);
+    setLiveAbilityFired({});
+    setShowExitConfirm(false);
+    setBattleSpeed(1);
+    clearLineup();
+    onReturnToArenaTab?.();
+  }, [clearLineup, onReturnToArenaTab]);
 
   const closeVictory = useCallback(() => {
     setResult(null);
@@ -559,7 +575,7 @@ export function SlimeArenaPanel({
                   }
                 }}
                 paused={
-                  (preBattleCountdown != null && preBattleCountdown > 0) || optionsMenuOpen
+                  (preBattleCountdown != null && preBattleCountdown > 0) || optionsMenuOpen || showExitConfirm
                 }
                 speedMultiplier={battleSpeed}
                 onHit={sfx.onHit}
@@ -590,8 +606,61 @@ export function SlimeArenaPanel({
                   <ChevronsRight className="h-4 w-4" aria-hidden />
                   Skip
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowExitConfirm(true)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-white/15 px-4 py-3 text-sm font-black uppercase tracking-wide text-rose-300 transition-all hover:bg-rose-500/25"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden />
+                </button>
               </div>
             )}
+            {/* Exit battle confirmation overlay */}
+            <AnimatePresence>
+              {showExitConfirm && (
+                <motion.div
+                  key="exit-confirm"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                >
+                  <motion.div
+                    initial={{ scale: 0.85, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.85, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                    className="mx-6 rounded-2xl border border-white/10 bg-slate-900/95 p-6 shadow-2xl"
+                  >
+                    <div className="mb-1 flex items-center justify-center">
+                      <div className="rounded-full bg-rose-500/20 p-3">
+                        <LogOut className="h-6 w-6 text-rose-400" aria-hidden />
+                      </div>
+                    </div>
+                    <h3 className="mt-3 text-center text-lg font-black text-white">Exit Battle?</h3>
+                    <p className="mt-1.5 text-center text-sm text-violet-200/70">
+                      You'll forfeit this fight with no rewards.
+                    </p>
+                    <div className="mt-5 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowExitConfirm(false)}
+                        className="flex flex-1 items-center justify-center rounded-xl bg-white/10 py-3 text-sm font-black uppercase tracking-wide text-violet-100 transition-all hover:bg-white/20"
+                      >
+                        Keep Fighting
+                      </button>
+                      <button
+                        type="button"
+                        onClick={exitBattle}
+                        className="flex flex-1 items-center justify-center rounded-xl bg-rose-500 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-rose-900/40 transition-all hover:bg-rose-400"
+                      >
+                        Exit
+                      </button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 pb-2 pt-1.5">
               <div className="grid grid-cols-4 gap-x-1.5">
                 {battleSession.playerSlimes.map((slime, i) => {

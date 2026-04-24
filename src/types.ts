@@ -71,7 +71,8 @@ export interface GameState {
   slimes: Slime[];
   /** Slime ids whose detail modal has been opened at least once (persists). */
   slimeDetailSeenIds: string[];
-  equippedSlimeIds: string[];
+  /** Equipped slime ids keyed by world index so each level has its own team. */
+  equippedSlimeIdsByWorld: Record<number, string[]>;
   /** Rare currency used for breeding. Earned from arena wins. */
   tickets: number;
 
@@ -152,7 +153,7 @@ export const INITIAL_STATE: GameState = {
   },
   slimes: [],
   slimeDetailSeenIds: [],
-  equippedSlimeIds: [],
+  equippedSlimeIdsByWorld: {},
   tickets: 0,
   eggs: 0,
   hatchingEgg: null,

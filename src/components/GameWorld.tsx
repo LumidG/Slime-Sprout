@@ -32,7 +32,7 @@ interface Coin {
 
 interface Effect {
   id: number;
-  type: 'collect' | 'trait_speed' | 'trait_magnetic' | 'trait_luck' | 'trait_power';
+  type: 'collect' | 'trait_speed' | 'trait_magnetic' | 'trait_luck' | 'trait_power' | 'heart';
   x: number;
   y: number;
   color: string;
@@ -244,6 +244,7 @@ function drawGroundTrailParticles(ctx: CanvasRenderingContext2D, particles: Grou
 
 interface GameWorldProps {
   onCollect: (count: number) => void;
+  onSlimeTap?: () => void;
   movementSpeedLevel: number;
   slimeMovementSpeedLevel: number;
   respawnTimeLevel: number;
@@ -465,8 +466,53 @@ function drawWorldDecoration(
   }
 }
 
+/** Draw a filled heart shape centered at the current canvas origin. */
+function drawHeart(ctx: CanvasRenderingContext2D, size: number) {
+  const w = size * 0.52;
+  const h = size * 0.48;
+  ctx.beginPath();
+  ctx.moveTo(0, h * 0.85);
+  // Right lobe
+  ctx.bezierCurveTo(w * 1.7, h * 0.2, w * 1.9, -h * 0.85, w * 0.95, -h * 0.85);
+  ctx.bezierCurveTo(w * 0.45, -h * 0.85, 0, -h * 0.35, 0, 0);
+  // Left lobe
+  ctx.bezierCurveTo(0, -h * 0.35, -w * 0.45, -h * 0.85, -w * 0.95, -h * 0.85);
+  ctx.bezierCurveTo(-w * 1.9, -h * 0.85, -w * 1.7, h * 0.2, 0, h * 0.85);
+  ctx.fill();
+}
+
+const HEART_COLORS = ['#FF3B6B', '#FF6B9D', '#FF4B7B', '#FF2D6A'];
+
+function spawnHeartParticles(
+  effects: Effect[],
+  nextId: React.MutableRefObject<number>,
+  worldX: number,
+  worldY: number,
+  _slimeColor: string
+) {
+  const count = 4 + Math.floor(Math.random() * 3); // 4–6 hearts
+  for (let i = 0; i < count; i++) {
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
+    const speed = 0.55 + Math.random() * 0.55;
+    const maxLife = 52 + Math.floor(Math.random() * 14);
+    effects.push({
+      id: nextId.current++,
+      type: 'heart',
+      x: worldX + (Math.random() - 0.5) * 18,
+      y: worldY - 14 + (Math.random() - 0.5) * 8,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 0.4,
+      color: HEART_COLORS[Math.floor(Math.random() * HEART_COLORS.length)],
+      size: 7 + Math.random() * 5,
+      life: maxLife,
+      maxLife,
+    });
+  }
+}
+
 export const GameWorld: React.FC<GameWorldProps> = ({
   onCollect,
+  onSlimeTap,
   movementSpeedLevel,
   slimeMovementSpeedLevel,
   respawnTimeLevel,
@@ -517,6 +563,15 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     maxRadius: 40,
   });
   const slimeSpriteCacheRef = useRef<Map<string, HTMLImageElement> | null>(null);
+  /** Tracks pointer-down position and candidate slime id for tap detection. */
+  const pointerTapRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    slimeId: string | null;
+  }>({ active: false, startX: 0, startY: 0, slimeId: null });
+  const onSlimeTapRef = useRef(onSlimeTap);
+  onSlimeTapRef.current = onSlimeTap;
   useEffect(() => {
     let cancelled = false;
     loadSlimeSpriteImageCache().then((m) => {
@@ -562,6 +617,21 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       curY: y,
     };
     e.currentTarget.setPointerCapture(e.pointerId);
+
+    // Hit-test equipped slimes in world space for tap detection
+    const cam = cameraRef.current;
+    const worldX = x + cam.x;
+    const worldY = y + cam.y;
+    let hitSlimeId: string | null = null;
+    for (const slime of equippedSlimes) {
+      const pos = slimesRef.current[slime.id];
+      if (!pos) continue;
+      if (Math.hypot(worldX - pos.x, worldY - pos.y) < 18) {
+        hitSlimeId = slime.id;
+        break;
+      }
+    }
+    pointerTapRef.current = { active: true, startX: x, startY: y, slimeId: hitSlimeId };
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -576,6 +646,22 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+
+    // Confirm tap: only trigger if the finger barely moved and we hit a slime
+    const tap = pointerTapRef.current;
+    if (tap.active && tap.slimeId) {
+      const { x, y } = getCanvasCoords(e);
+      const moved = Math.hypot(x - tap.startX, y - tap.startY);
+      if (moved < 10) {
+        const slime = equippedSlimes.find(s => s.id === tap.slimeId);
+        const pos = tap.slimeId ? slimesRef.current[tap.slimeId] : null;
+        if (slime && pos) {
+          spawnHeartParticles(effectsRef.current, nextEffectId, pos.x, pos.y, slime.color);
+          onSlimeTapRef.current?.();
+        }
+      }
+    }
+    pointerTapRef.current.active = false;
   };
 
   // Clear all coins immediately when entering a completed level.
@@ -911,6 +997,9 @@ export const GameWorld: React.FC<GameWorldProps> = ({
       if (e.type === 'collect') {
         e.scale = e.life / e.maxLife;
       }
+      if (e.type === 'heart') {
+        e.vy = (e.vy ?? 0) + 0.018; // gentle gravity pull
+      }
       if (e.vx !== undefined) e.x += e.vx;
       if (e.vy !== undefined) e.y += e.vy;
       return e.life > 0;
@@ -1059,17 +1148,41 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     ctx.arc(0, -10, 8, Math.PI, 0);
     ctx.fill();
 
-    // Legs
-    ctx.fillStyle = '#1E3A8A'; // Dark blue pants
-    ctx.fillRect(-7, 12, 6, 8);
-    ctx.fillRect(1, 12, 6, 8);
-    
-    // Arms (swinging effect if moving)
+    // Arms and Legs (pivot-based swing so limbs stay attached)
     const isMoving = moveDir.x !== 0 || moveDir.y !== 0;
-    const swing = isMoving ? Math.sin(Date.now() / 100) * 5 : 0;
+    const swingAngle = isMoving ? Math.sin(Date.now() / 100) * 0.18 : 0;
+
+    // Left arm — pivots at (-8, 2) where it meets the body
+    ctx.save();
+    ctx.translate(-8, 2);
+    ctx.rotate(swingAngle);
     ctx.fillStyle = '#FFDBAC';
-    ctx.fillRect(-12, 2 + swing, 4, 8);
-    ctx.fillRect(8, 2 - swing, 4, 8);
+    ctx.fillRect(-4, 0, 4, 8);
+    ctx.restore();
+
+    // Right arm — pivots at (8, 2), swings opposite
+    ctx.save();
+    ctx.translate(8, 2);
+    ctx.rotate(-swingAngle);
+    ctx.fillStyle = '#FFDBAC';
+    ctx.fillRect(0, 0, 4, 8);
+    ctx.restore();
+
+    // Left leg — pivots at (-4, 12) where it meets the body, swings opposite to left arm
+    ctx.save();
+    ctx.translate(-4, 12);
+    ctx.rotate(-swingAngle);
+    ctx.fillStyle = '#1E3A8A';
+    ctx.fillRect(-3, 0, 6, 8);
+    ctx.restore();
+
+    // Right leg — pivots at (4, 12), swings opposite to right arm
+    ctx.save();
+    ctx.translate(4, 12);
+    ctx.rotate(swingAngle);
+    ctx.fillStyle = '#1E3A8A';
+    ctx.fillRect(-3, 0, 6, 8);
+    ctx.restore();
 
     ctx.restore();
 
@@ -1344,6 +1457,22 @@ export const GameWorld: React.FC<GameWorldProps> = ({
         ctx.shadowBlur = 10;
         ctx.shadowColor = 'white';
         ctx.fill();
+      } else if (e.type === 'heart') {
+        // Pop-in scale: grows from 0→1.25 in first 8 frames, then holds
+        const age = e.maxLife - e.life;
+        const popScale = age < 8 ? (age / 8) * 1.25 : 1.05;
+        // Fade out in the last 30% of life
+        const fadeAlpha = Math.min(1, e.life / (e.maxLife * 0.35));
+        ctx.globalAlpha = fadeAlpha;
+        ctx.fillStyle = e.color;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = e.color;
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.scale(popScale, popScale);
+        drawHeart(ctx, e.size ?? 8);
+        ctx.restore();
+        ctx.shadowBlur = 0;
       }
       ctx.restore();
     });

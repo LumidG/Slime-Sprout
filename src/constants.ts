@@ -736,11 +736,6 @@ export interface LevelGoal {
   /** Human-readable reward summary shown on the collect button. */
   rewardLabel: string;
   isFinal?: boolean;
-  /**
-   * If true the goal is considered ready when all game upgrades are maxed
-   * (instead of a coin-collection threshold). Claiming it unlocks the next world.
-   */
-  requiresAllUpgradesMaxed?: boolean;
 }
 
 /**
@@ -749,8 +744,17 @@ export interface LevelGoal {
  */
 export const LEVEL_GOALS: readonly LevelGoal[] = [
   {
-    threshold: 15,
-    label: 'Collect 15 coins',
+    threshold: 5,
+    label: 'Collect 5 coins',
+    rewardEggs: 0,
+    rewardCoins: 0,
+    rewardTickets: 3,
+    rewardSlime: false,
+    rewardLabel: '+3 Tickets 🎟️',
+  },
+  {
+    threshold: 117,
+    label: 'Collect 117 coins',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 1,
@@ -758,17 +762,17 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     rewardLabel: '+1 Ticket 🎟️',
   },
   {
-    threshold: 350,
-    label: 'Collect 350 coins',
+    threshold: 267,
+    label: 'Collect 267 coins',
     rewardEggs: 0,
-    rewardCoins: 150,
-    rewardTickets: 0,
+    rewardCoins: 0,
+    rewardTickets: 3,
     rewardSlime: false,
-    rewardLabel: '+150 Coins 💰',
+    rewardLabel: '+3 Tickets 🎟️',
   },
   {
-    threshold: 800,
-    label: 'Collect 800 coins',
+    threshold: 600,
+    label: 'Collect 600 coins',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 1,
@@ -776,24 +780,14 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     rewardLabel: '+1 Ticket 🎟️',
   },
   {
-    threshold: 1800,
-    label: 'Collect 1,800 coins',
-    rewardEggs: 0,
-    rewardCoins: 0,
-    rewardTickets: 2,
-    rewardSlime: false,
-    rewardLabel: '+2 Tickets 🎟️',
-  },
-  {
-    threshold: 4000,
-    label: 'Max all upgrades',
+    threshold: 1334,
+    label: 'Collect 1334 coins',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 3,
     rewardSlime: true,
-    rewardLabel: '+3 Tickets + Mystery Slime ✨',
+    rewardLabel: '+3 Tickets + ✨ Rare Slime',
     isFinal: true,
-    requiresAllUpgradesMaxed: true,
   },
 ] as const;
 

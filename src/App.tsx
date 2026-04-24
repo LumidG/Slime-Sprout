@@ -92,6 +92,7 @@ import { SystemUi } from './systemUi';
 import { useAppForeground } from './hooks/useAppForeground';
 import { useBlossomMusic, BLOSSOM_MUSIC_URL, BOSS_BATTLE_MUSIC_URL } from './hooks/useBlossomMusic';
 import { useCoinCollectSfx } from './hooks/useCoinCollectSfx';
+import { useSlimeTapSfx } from './hooks/useSlimeTapSfx';
 import { useGlobalButtonTapFeedback, triggerPreviewHaptic } from './hooks/useTapFeedback';
 
 function OptionsOnOffRow(props: {
@@ -452,6 +453,16 @@ export default function App() {
         parsed.worldGoalsClaimed = parsed.worldGoalsClaimed.map(Boolean) as [boolean, boolean, boolean, boolean, boolean];
       }
 
+      // Migrate legacy flat equippedSlimeIds → per-world map
+      if (Array.isArray(parsed.equippedSlimeIds)) {
+        const worldIdx: number = parsed.gameWorldIndex ?? 0;
+        parsed.equippedSlimeIdsByWorld = { [worldIdx]: parsed.equippedSlimeIds };
+        delete parsed.equippedSlimeIds;
+      }
+      if (!parsed.equippedSlimeIdsByWorld || typeof parsed.equippedSlimeIdsByWorld !== 'object' || Array.isArray(parsed.equippedSlimeIdsByWorld)) {
+        parsed.equippedSlimeIdsByWorld = {};
+      }
+
       if (!Array.isArray(parsed.slimeDetailSeenIds)) {
         parsed.slimeDetailSeenIds = Array.isArray(parsed.slimes)
           ? parsed.slimes.map((s: Slime) => s.id)
@@ -625,7 +636,7 @@ export default function App() {
 
       // Calculate trait bonus
       let traitBonus = 0;
-      prev.equippedSlimeIds.forEach(id => {
+      (prev.equippedSlimeIdsByWorld[prev.gameWorldIndex] ?? []).forEach(id => {
         const slime = prev.slimes.find(s => s.id === id);
         if (slime && slime.trait) {
           traitBonus += TRAIT_EFFECTS[slime.trait].coinValue || 0;
@@ -646,6 +657,12 @@ export default function App() {
   }, []);
 
   const playCoinCollect = useCoinCollectSfx(
+    hasStarted && appForeground,
+    state.settings.sfxEnabled,
+    1
+  );
+
+  const playSlimeTap = useSlimeTapSfx(
     hasStarted && appForeground,
     state.settings.sfxEnabled,
     1
@@ -684,21 +701,31 @@ export default function App() {
           availableNames.length > 0
             ? availableNames[Math.floor(Math.random() * availableNames.length)]
             : SLIME_NAMES[Math.floor(Math.random() * SLIME_NAMES.length)];
+        const highQuality = !!goal.isFinal;
+        const rareTRAITS = TRAITS.filter((t) => t !== 'None') as SlimeTrait[];
         const rewardSlime: Slime = {
           id: Math.random().toString(36).substr(2, 9),
           name: slimeName,
           color: COLORS[Math.floor(Math.random() * COLORS.length)],
           ...rollNewSlimeVisuals(),
-          stats: {
-            health: 5 + Math.floor(Math.random() * 5),
-            strength: 5 + Math.floor(Math.random() * 5),
-            agility: 5 + Math.floor(Math.random() * 5),
-          },
+          stats: highQuality
+            ? {
+                health: 10 + Math.floor(Math.random() * 6),
+                strength: 10 + Math.floor(Math.random() * 6),
+                agility: 10 + Math.floor(Math.random() * 6),
+              }
+            : {
+                health: 5 + Math.floor(Math.random() * 5),
+                strength: 5 + Math.floor(Math.random() * 5),
+                agility: 5 + Math.floor(Math.random() * 5),
+              },
           statLevels: { health: 1, strength: 1, agility: 1 },
-          trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+          trait: highQuality
+            ? rareTRAITS[Math.floor(Math.random() * rareTRAITS.length)]
+            : (TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait),
           arenaAbility: rollRandomArenaAbility(),
           level: 1,
-          value: 50,
+          value: highQuality ? 150 : 50,
           hatchedAt: Date.now(),
         };
         newSlimes = [...prev.slimes, rewardSlime];
@@ -746,22 +773,24 @@ export default function App() {
 
   const toggleEquipSlime = (id: string) => {
     setState(prev => {
-      const isEquipped = prev.equippedSlimeIds.includes(id);
+      const worldIdx = prev.gameWorldIndex;
+      const current = prev.equippedSlimeIdsByWorld[worldIdx] ?? [];
+      const isEquipped = current.includes(id);
       if (isEquipped) {
         return {
           ...prev,
-          equippedSlimeIds: prev.equippedSlimeIds.filter(i => i !== id)
+          equippedSlimeIdsByWorld: { ...prev.equippedSlimeIdsByWorld, [worldIdx]: current.filter(i => i !== id) },
         };
       } else {
         const slotCap = equippedSlimeCapAtLevel(prev.upgrades.slimeCap);
-        if (prev.equippedSlimeIds.length >= slotCap) {
+        if (current.length >= slotCap) {
           // Team is full — let the player pick who to swap out
           setPendingEquipSlimeId(id);
           return prev;
         }
         return {
           ...prev,
-          equippedSlimeIds: [...prev.equippedSlimeIds, id]
+          equippedSlimeIdsByWorld: { ...prev.equippedSlimeIdsByWorld, [worldIdx]: [...current, id] },
         };
       }
     });
@@ -772,12 +801,17 @@ export default function App() {
     if (!pendingEquipSlimeId) return;
     const incoming = pendingEquipSlimeId;
     setPendingEquipSlimeId(null);
-    setState(prev => ({
-      ...prev,
-      equippedSlimeIds: prev.equippedSlimeIds
-        .filter(i => i !== removeId)
-        .concat(incoming),
-    }));
+    setState(prev => {
+      const worldIdx = prev.gameWorldIndex;
+      const current = prev.equippedSlimeIdsByWorld[worldIdx] ?? [];
+      return {
+        ...prev,
+        equippedSlimeIdsByWorld: {
+          ...prev.equippedSlimeIdsByWorld,
+          [worldIdx]: current.filter(i => i !== removeId).concat(incoming),
+        },
+      };
+    });
   };
 
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
@@ -1203,10 +1237,10 @@ export default function App() {
     );
   }
 
+  const currentEquippedIds = state.equippedSlimeIdsByWorld[state.gameWorldIndex] ?? [];
+
   return (
-    <div
-      className={`relative flex h-full min-h-[100dvh] w-full flex-col overflow-hidden select-none ${isGameTab ? 'bg-app-game' : 'bg-app-page'}`}
-    >
+    <>
       {/* Onboarding Overlay */}
       <AnimatePresence>
         {!state.hasCompletedOnboarding && hasStarted && (
@@ -1853,7 +1887,7 @@ export default function App() {
                   <p className="mb-2 text-[10px] font-black text-emerald-600/80 uppercase">Currency</p>
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => debugAddCoins(1000)} className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 py-2 text-xs font-bold text-orange-800">+1k 💰</button>
-                    <button onClick={() => debugAddCoins(10000)} className="rounded-xl bg-gradient-to-br from-amber-200 to-orange-200 py-2 text-xs font-bold text-orange-900">+10k 💰</button>
+                    <button onClick={() => debugAddCoins(20000)} className="rounded-xl bg-gradient-to-br from-amber-200 to-orange-200 py-2 text-xs font-bold text-orange-900">+20k 💰</button>
                     <button onClick={() => debugAddTickets(5)} className="rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 py-2 text-xs font-bold text-purple-800">+5 🎟️</button>
                     <button onClick={() => debugAddTickets(20)} className="rounded-xl bg-gradient-to-br from-violet-200 to-purple-200 py-2 text-xs font-bold text-purple-900">+20 🎟️</button>
                   </div>
@@ -2072,12 +2106,12 @@ export default function App() {
                           toggleEquipSlime(selectedSlimeDetail.id);
                         }}
                         className={`w-full rounded-xl py-3 text-sm font-black tracking-widest transition-all ${
-                          state.equippedSlimeIds.includes(selectedSlimeDetail.id)
+                          currentEquippedIds.includes(selectedSlimeDetail.id)
                           ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md hover:brightness-105'
                           : 'btn-primary-glow shadow-md'
                         }`}
                       >
-                        {state.equippedSlimeIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
+                        {currentEquippedIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
                       </button>
                     </div>
               </div>
@@ -2091,7 +2125,7 @@ export default function App() {
       <AnimatePresence>
         {pendingEquipSlimeId && (() => {
           const incoming = state.slimes.find(s => s.id === pendingEquipSlimeId);
-          const equippedSlimes = state.slimes.filter(s => state.equippedSlimeIds.includes(s.id));
+          const equippedSlimes = state.slimes.filter(s => currentEquippedIds.includes(s.id));
           if (!incoming) return null;
           return (
             <motion.div
@@ -2178,12 +2212,13 @@ export default function App() {
                   <GameWorld
                     worldIndex={state.gameWorldIndex}
                     onCollect={handleGameCollect}
+                    onSlimeTap={playSlimeTap}
                     movementSpeedLevel={state.upgrades.movementSpeed}
                     slimeMovementSpeedLevel={state.upgrades.slimeMovementSpeed}
                     respawnTimeLevel={state.upgrades.respawnTime}
                     coinCapLevel={state.upgrades.coinCap}
                     equippedSlimes={state.slimes.filter((s) =>
-                      state.equippedSlimeIds.includes(s.id)
+                      currentEquippedIds.includes(s.id)
                     )}
                     insetLeftForWorldNav={state.gameWorldIndex > 0}
                     insetRightForWorldNav={
@@ -2357,7 +2392,7 @@ export default function App() {
                   <div className="flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-100 to-orange-100 px-2 py-0.5 ring-1 ring-orange-200/60">
                     <span className="text-[8px] font-black text-emerald-800">Equipped</span>
                     <p className="text-[9px] font-black text-orange-800">
-                      {state.equippedSlimeIds.length}/{equippedSlimeCapAtLevel(state.upgrades.slimeCap)}
+                      {currentEquippedIds.length}/{equippedSlimeCapAtLevel(state.upgrades.slimeCap)}
                     </p>
                   </div>
                 </div>
@@ -2368,7 +2403,7 @@ export default function App() {
                       key={slime.id} 
                       slime={slime} 
                       coins={state.coins}
-                      isEquipped={state.equippedSlimeIds.includes(slime.id)}
+                      isEquipped={currentEquippedIds.includes(slime.id)}
                       onEquip={toggleEquipSlime}
                       onClick={openSlimeDetail}
                       detailSeen={state.slimeDetailSeenIds.includes(slime.id)}
@@ -2578,12 +2613,14 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Arena */}
+      {/* Bottom Navigation — floats over game; in-flow on Slimes / Market / Arena; hidden during arena battle */}
       <div
         className={
-          isGameTab
-            ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-evenly p-1.5 pb-nav-safe'
-            : 'glass-nav-page relative z-50 flex items-center justify-evenly p-1.5 pb-nav-safe'
+          arenaBattleActive
+            ? 'hidden'
+            : isGameTab
+              ? 'glass-nav-game pointer-events-none absolute right-0 bottom-0 left-0 z-40 flex items-center justify-evenly p-1.5 pb-nav-safe'
+              : 'glass-nav-page relative z-50 flex items-center justify-evenly p-1.5 pb-nav-safe'
         }
       >
         <NavButton 
@@ -2803,7 +2840,7 @@ export default function App() {
           </AnimatePresence>
         </>
       )}
-    </div>
+  </>
   );
 }
 

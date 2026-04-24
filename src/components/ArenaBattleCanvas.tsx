@@ -937,12 +937,13 @@ export function ArenaBattleCanvas({
       const isSpeedType = ['Swift', 'Fast', 'Sonic'].includes(slime.trait);
       let jumpY = 0;
       let squashStretch = 1;
-      if (isBursting && isSpeedType) {
+      if (isBursting && isSpeedType && !paused) {
         const jumpCycle = (time % 600) / 600;
         jumpY = Math.sin(jumpCycle * Math.PI) * -25;
         squashStretch = 1 + Math.sin(jumpCycle * Math.PI - Math.PI / 2) * 0.15;
       }
-      const moveDist = pos.moveDist ?? 0;
+      // Freeze walk/jump animation during countdown / pause so slimes stand still.
+      const moveDist = paused ? 0 : (pos.moveDist ?? 0);
       const isWalking = moveDist > 0.05;
       const walkWobble =
         isWalking && !(isBursting && isSpeedType)
@@ -962,7 +963,8 @@ export function ArenaBattleCanvas({
       let meleeProg: number | null = null;
       let meleeTx = 0;
       let meleeTy = 0;
-      const atkAnim = meleeAttackAnimRef.current[slime.id];
+      // Don't show stale melee swing animation during pause/countdown.
+      const atkAnim = paused ? undefined : meleeAttackAnimRef.current[slime.id];
       if (atkAnim) {
         const animDuration = ARENA_MELEE_ATTACK_ANIM_MS / spd;
         const age = timeNow - atkAnim.startMs;
