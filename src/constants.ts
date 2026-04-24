@@ -1,4 +1,4 @@
-import {
+﻿import {
   GameState,
   Slime,
   SlimeArenaAbility,
@@ -208,6 +208,49 @@ export const ARENA_MELEE_PAIR_ATTACK_INTERVAL_MS = 920;
 export const ARENA_MELEE_POST_SWING_MS = 480;
 /** Length of one melee “special attack” animation cycle (ms). */
 export const ARENA_MELEE_ATTACK_ANIM_MS = 380;
+// Per-slime normal attack system
+
+/** Base normal-attack cooldown for a freshly-hatched slime (ms). Variety shifts this +/-400 ms. */
+export const ARENA_NORMAL_ATTACK_COOLDOWN_BASE_MS = 2000;
+/** Each slime gets +/-this offset based on its id hash. Range: [1600 ms, 2400 ms]. */
+export const ARENA_NORMAL_ATTACK_VARIETY_RANGE_MS = 400;
+/** Hard floor for the cooldown after all strength reductions. */
+export const ARENA_NORMAL_ATTACK_COOLDOWN_MIN_MS = 600;
+/** Upgrading Strength subtracts this many ms per stat level above 1. */
+export const ARENA_NORMAL_ATTACK_STR_COOLDOWN_REDUCTION_MS = 40;
+
+/** Deterministic 0-1 variety value derived from the slime id string. */
+export function slimeIdVariety(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < Math.min(8, id.length); i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
+  }
+  return hash / 0xffff;
+}
+
+/**
+ * Normal-attack cooldown (ms) for a slime.
+ * Base 2000 ms +/- 400 ms id-derived variety; each strength stat level above 1
+ * subtracts 40 ms, floored at 600 ms.
+ */
+export function slimeAttackCooldownMs(slime: Slime): number {
+  const variety = slimeIdVariety(slime.id);
+  const base =
+    ARENA_NORMAL_ATTACK_COOLDOWN_BASE_MS +
+    (variety * 2 - 1) * ARENA_NORMAL_ATTACK_VARIETY_RANGE_MS;
+  const strReduction =
+    Math.max(0, slime.statLevels.strength - 1) * ARENA_NORMAL_ATTACK_STR_COOLDOWN_REDUCTION_MS;
+  return Math.max(ARENA_NORMAL_ATTACK_COOLDOWN_MIN_MS, base - strReduction);
+}
+
+/**
+ * Full-dodge chance (0-1) when this slime is struck.
+ * 2% at stat level 1, +2pp per agility level, capped at 50%.
+ * Also grants a partial-damage-reduction tier at 2x the dodge chance.
+ */
+export function slimeAgilityDodgeChance(agilityStatLevel: number): number {
+  return Math.min(0.5, 0.02 + Math.max(0, agilityStatLevel - 1) * 0.02);
+}
 
 export const ARENA_ABILITIES: SlimeArenaAbility[] = [
   'None',

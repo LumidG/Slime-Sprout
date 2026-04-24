@@ -81,6 +81,8 @@ export interface GameState {
     startTime: number;
   } | null;
   newlyHatchedSlime: Slime | null;
+  /** Set when the player buys x10 slimes; shown in the multi-slime celebration overlay. */
+  newlyHatchedSlimes: Slime[] | null;
 
   /**
    * Active breeding egg that the player must tap to hatch.
@@ -155,6 +157,7 @@ export const INITIAL_STATE: GameState = {
   eggs: 0,
   hatchingEgg: null,
   newlyHatchedSlime: null,
+  newlyHatchedSlimes: null,
   breedingEgg: null,
   slimeArenaAbilityCooldownUntil: {},
   arenaWins: 0,

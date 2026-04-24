@@ -959,7 +959,8 @@ export const GameWorld: React.FC<GameWorldProps> = ({
 
     // Walkable-area border
     ctx.save();
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.35)';
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = theme.accentStroke;
     ctx.lineWidth = 3;
     ctx.setLineDash([12, 8]);
     ctx.strokeRect(WALKABLE_ORIGIN_X, WALKABLE_ORIGIN_Y, WALKABLE_WIDTH, WALKABLE_HEIGHT);

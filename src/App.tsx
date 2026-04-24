@@ -11,7 +11,6 @@ import {
   Zap,
   Timer,
   Coins,
-  Egg,
   Heart,
   Sword,
   Wind,
@@ -267,7 +266,7 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'slimeCap') &&
       state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap));
   
-  const hasSlimesNotification = state.eggs > 0 || state.hatchingEgg?.progress === 100; // Not strictly purchase, but important action
+  const hasSlimesNotification = false;
 
   const isGameTab = state.activeTab === 'game';
   /** True when the player is viewing a world they've already beaten (index < max unlocked). */
@@ -779,30 +778,6 @@ export default function App() {
     });
   };
 
-  const buyEgg = (amount: number = 1) => {
-    const totalCost = eggPurchaseCost(amount);
-    if (state.coins >= totalCost) {
-      setState(prev => ({
-        ...prev,
-        coins: prev.coins - totalCost,
-        eggs: prev.eggs + amount
-      }));
-    }
-  };
-
-  const startHatching = () => {
-    if (state.eggs > 0 && !state.hatchingEgg) {
-      setState(prev => ({
-        ...prev,
-        eggs: prev.eggs - 1,
-        hatchingEgg: {
-          progress: 0,
-          startTime: Date.now()
-        }
-      }));
-    }
-  };
-
   const getUniqueName = (existingSlimes: Slime[]) => {
     const usedNames = new Set(existingSlimes.map(s => s.name));
     const availableNames = SLIME_NAMES.filter(name => !usedNames.has(name));
@@ -821,42 +796,45 @@ export default function App() {
     return fallbackName;
   };
 
-  const pokeEgg = () => {
-    if (state.hatchingEgg) {
+  const makeSlime = (existingSlimes: Slime[]): Slime => ({
+    id: Math.random().toString(36).substr(2, 9),
+    name: getUniqueName(existingSlimes),
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    ...rollNewSlimeVisuals(),
+    stats: {
+      health: 10 + Math.floor(Math.random() * 10),
+      strength: 5 + Math.floor(Math.random() * 5),
+      agility: 5 + Math.floor(Math.random() * 5),
+    },
+    statLevels: { health: 1, strength: 1, agility: 1 },
+    trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
+    arenaAbility: rollRandomArenaAbility(),
+    level: 1,
+    value: 50,
+    hatchedAt: Date.now(),
+  });
+
+  const buySlimes = (amount: number = 1) => {
+    const totalCost = eggPurchaseCost(amount);
+    if (state.coins >= totalCost) {
       setState(prev => {
-        if (!prev.hatchingEgg) return prev;
-        const newProgress = prev.hatchingEgg.progress + 10;
-        if (newProgress >= 100) {
-          const newSlime: Slime = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: getUniqueName(prev.slimes),
-            color: COLORS[Math.floor(Math.random() * COLORS.length)],
-            ...rollNewSlimeVisuals(),
-            stats: {
-              health: 10 + Math.floor(Math.random() * 10),
-              strength: 5 + Math.floor(Math.random() * 5),
-              agility: 5 + Math.floor(Math.random() * 5),
-            },
-            statLevels: { health: 1, strength: 1, agility: 1 },
-            trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
-            arenaAbility: rollRandomArenaAbility(),
-            level: 1,
-            value: 50,
-            hatchedAt: Date.now()
-          };
+        const newSlimes: Slime[] = [];
+        for (let i = 0; i < amount; i++) {
+          newSlimes.push(makeSlime([...prev.slimes, ...newSlimes]));
+        }
+        if (amount === 1) {
           return {
             ...prev,
-            hatchingEgg: null,
-            slimes: [...prev.slimes, newSlime],
-            newlyHatchedSlime: newSlime
+            coins: prev.coins - totalCost,
+            slimes: [...prev.slimes, ...newSlimes],
+            newlyHatchedSlime: newSlimes[0],
           };
         }
         return {
           ...prev,
-          hatchingEgg: {
-            ...prev.hatchingEgg,
-            progress: newProgress
-          }
+          coins: prev.coins - totalCost,
+          slimes: [...prev.slimes, ...newSlimes],
+          newlyHatchedSlimes: newSlimes,
         };
       });
     }
@@ -1741,6 +1719,59 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Multi-Slime Celebration Overlay (Buy x10) */}
+      <AnimatePresence>
+        {state.newlyHatchedSlimes && state.newlyHatchedSlimes.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[110] flex items-center justify-center bg-gradient-to-br from-emerald-600/95 via-green-600/90 to-orange-400/90 p-5 text-center backdrop-blur-md overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.5, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              className="flex w-full max-w-sm flex-col items-center"
+            >
+              <motion.div
+                animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+                className="mb-4"
+              >
+                <PartyPopper className="mb-2 h-14 w-14 text-amber-100 drop-shadow-md" />
+              </motion.div>
+
+              <h2 className="mb-1 text-4xl font-black text-white drop-shadow-sm">10 new slimes!</h2>
+              <p className="mb-5 font-bold text-emerald-50">A whole squad has joined your collection!</p>
+
+              <div className="mb-6 w-full rounded-2xl bg-white/20 p-3 backdrop-blur-sm">
+                <div className="grid grid-cols-5 gap-2">
+                  {state.newlyHatchedSlimes.map((slime) => (
+                    <motion.div
+                      key={slime.id}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 20, delay: state.newlyHatchedSlimes!.indexOf(slime) * 0.05 }}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <SlimeStackSprite slime={slime} size="lg" className="shadow-lg ring-2 ring-white/30" />
+                      <span className="text-[8px] font-black leading-tight text-white/90 text-center line-clamp-1 w-full">{slime.name}</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setState(s => ({ ...s, newlyHatchedSlimes: null }))}
+                className="rounded-2xl bg-white px-12 py-4 text-lg font-black text-orange-600 shadow-xl ring-2 ring-orange-200/80 transition-transform hover:scale-105"
+              >
+                Awesome!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Debug Menu Overlay */}
       <AnimatePresence>
         {isDebugOpen && (
@@ -2127,133 +2158,15 @@ export default function App() {
               exit={{ x: -100, opacity: 0 }}
               className="flex h-full min-h-0 w-full flex-col overflow-hidden"
             >
-              {/* Upper Half: Eggs and Hatching */}
-              <div className="flex min-h-[160px] flex-none flex-col justify-center border-b border-emerald-100/80 bg-gradient-to-b from-emerald-100/90 via-orange-50/50 to-white p-3">
-                <div className="flex flex-col items-center justify-center gap-3">
-                  {/* Middle: Hatching Area */}
-                  <div className="flex flex-col items-center justify-center relative h-36">
-                    {!state.hatchingEgg ? (
-                      <div className="flex flex-col items-center justify-center h-full gap-3">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300 relative group transition-all">
-                          <Egg className="w-8 h-8 text-gray-300 group-hover:scale-110 transition-transform" />
-                          <div className="absolute -top-1 -right-1 bg-yellow-400 text-white text-[8px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                            {state.eggs}
-                          </div>
-                        </div>
-                        <div className="h-6 flex items-center justify-center">
-                          {state.eggs > 0 ? (
-                            <button 
-                              onClick={startHatching}
-                              className="btn-primary-glow animate-pulse rounded-full px-4 py-1.5 text-[9px] font-black"
-                            >
-                              Hatch now
-                            </button>
-                          ) : (
-                            <span className="text-[9px] font-black text-gray-400 tracking-widest">No eggs to hatch</span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full">
-                        <motion.div 
-                          animate={{ 
-                            scale: [1, 1.02, 1],
-                            rotate: [0, -1, 1, 0]
-                          }}
-                          transition={{ repeat: Infinity, duration: 2.5 }}
-                          whileTap={{ scale: 0.95, rotate: [-1, 1, 0] }}
-                          onClick={pokeEgg}
-                          className="relative cursor-pointer group flex items-center justify-center"
-                        >
-                          {/* Custom Filled Egg */}
-                          <div className="relative w-24 h-28 flex items-center justify-center scale-75 origin-center">
-                            {/* Solid Shell with Gradient/Detail */}
-                            <div 
-                              className="absolute w-20 h-28 bg-gradient-to-br from-yellow-50 to-yellow-200 border-4 border-yellow-600 rounded-[50%_50%_50%_50%/_60%_60%_40%_40%] shadow-2xl overflow-hidden"
-                            >
-                              {/* Shell Highlight */}
-                              <div className="absolute top-4 left-4 w-5 h-8 bg-white/40 rounded-full blur-[2px] -rotate-12" />
-                            </div>
-                            
-                            {/* Refined Cracks (SVG for Jagged Lines) */}
-                            <svg 
-                              className="absolute inset-0 w-full h-full z-10 pointer-events-none" 
-                              viewBox="0 0 128 160"
-                            >
-                              <g fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" stroke="#713F12">
-                                {/* Crack 1: Top Left */}
-                                <motion.path 
-                                  initial={{ pathLength: 0, opacity: 0 }}
-                                  animate={{ 
-                                    pathLength: state.hatchingEgg.progress > 20 ? 1 : 0,
-                                    opacity: state.hatchingEgg.progress > 20 ? 1 : 0 
-                                  }}
-                                  d="M45,45 L50,55 L42,65 L55,75"
-                                />
-                                {/* Crack 2: Bottom Right */}
-                                <motion.path 
-                                  initial={{ pathLength: 0, opacity: 0 }}
-                                  animate={{ 
-                                    pathLength: state.hatchingEgg.progress > 45 ? 1 : 0,
-                                    opacity: state.hatchingEgg.progress > 45 ? 1 : 0 
-                                  }}
-                                  d="M85,110 L75,100 L82,90 L70,80"
-                                />
-                                {/* Crack 3: Middle Left */}
-                                <motion.path 
-                                  initial={{ pathLength: 0, opacity: 0 }}
-                                  animate={{ 
-                                    pathLength: state.hatchingEgg.progress > 70 ? 1 : 0,
-                                    opacity: state.hatchingEgg.progress > 70 ? 1 : 0 
-                                  }}
-                                  d="M30,85 L40,95 L32,105 L45,115"
-                                />
-                                {/* Crack 4: Top Center Split */}
-                                <motion.path 
-                                  initial={{ pathLength: 0, opacity: 0 }}
-                                  animate={{ 
-                                    pathLength: state.hatchingEgg.progress > 90 ? 1 : 0,
-                                    opacity: state.hatchingEgg.progress > 90 ? 1 : 0 
-                                  }}
-                                  d="M64,32 L60,50 L68,70 L64,90 L70,110"
-                                  strokeWidth="3"
-                                />
-                              </g>
-                            </svg>
-
-                            {/* POKE! Text */}
-                            <div className="z-20 flex items-center justify-center">
-                               <motion.span 
-                                  animate={{ 
-                                    scale: [1, 1.05 + (state.hatchingEgg.progress / 400), 1],
-                                    color: state.hatchingEgg.progress > 80 ? ['#713F12', '#92400E', '#713F12'] : '#713F12'
-                                  }} 
-                                  transition={{ repeat: Infinity, duration: 0.8 }}
-                                  className="text-yellow-900 font-extrabold text-sm drop-shadow-md select-none tracking-widest"
-                               >
-                                  Poke!
-                               </motion.span>
-                            </div>
-                          </div>
-                        </motion.div>
-                        <div className="flex flex-col items-center">
-                          <div className="mt-0 h-1 w-32 overflow-hidden rounded-full border border-orange-100 bg-white/80 shadow-inner">
-                            <motion.div 
-                              className="h-full bg-gradient-to-r from-emerald-500 to-orange-400"
-                              animate={{ width: `${state.hatchingEgg.progress}%` }}
-                            />
-                          </div>
-                          <p className="mt-0.5 text-[8px] font-black text-emerald-700 tracking-tighter">{state.hatchingEgg.progress}% hatched</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Buy Section: Below hatching area */}
+              {/* Shop: Buy Slimes */}
+              <div className="flex flex-none flex-col justify-center border-b border-emerald-100/80 bg-gradient-to-b from-emerald-100/90 via-orange-50/50 to-white px-3 py-4">
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Get New Slimes</p>
+                  {/* Buy Buttons */}
                   <div className="flex gap-3 w-full max-w-sm">
                     <button 
                       type="button"
-                      onClick={() => buyEgg(1)}
+                      onClick={() => buySlimes(1)}
                       disabled={state.coins < EGG_COST}
                       className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
@@ -2264,7 +2177,7 @@ export default function App() {
                     </button>
                     <button 
                       type="button"
-                      onClick={() => buyEgg(10)}
+                      onClick={() => buySlimes(10)}
                       disabled={state.coins < EGG_BULK_10_COST}
                       className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
@@ -2310,7 +2223,7 @@ export default function App() {
                       <Ghost className="h-12 w-12 text-emerald-200" />
                       <div>
                         <p className="text-gray-400 font-medium">No slimes yet.</p>
-                        <p className="text-[10px] text-gray-400 mt-1 font-black">Buy and hatch your first egg!</p>
+                        <p className="text-[10px] text-gray-400 mt-1 font-black">Buy your first slime!</p>
                       </div>
                     </div>
                   )}
@@ -2567,7 +2480,7 @@ export default function App() {
                   initial={{ y: 300, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: 300, opacity: 0 }}
-                  className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-1.5 left-1.5 z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl bg-gradient-to-b from-white/97 via-emerald-50/50 to-orange-50/60 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
+                  className="game-upgrades-sheet ui-emerald-outline pointer-events-auto absolute right-6 left-6 z-50 flex min-h-0 flex-col overflow-hidden rounded-2xl bg-gradient-to-b from-white/97 via-emerald-50/50 to-orange-50/60 p-4 shadow-xl shadow-emerald-900/10 backdrop-blur-md"
                 >
                 <div className="mb-3 flex shrink-0 items-center justify-between">
                   <h3 className="flex items-center gap-2 text-base font-black tracking-tight text-emerald-900">
@@ -2612,6 +2525,7 @@ export default function App() {
                     onPurchaseMax={() => buyUpgradeMax('movementSpeed')}
                     maxed={isMaxed('movementSpeed')}
                   />
+                  {state.slimes.length > 0 && (
                   <GameUpgradeRow
                     title="Slime speed"
                     description="Slimes move faster and collect coins sooner."
@@ -2629,6 +2543,7 @@ export default function App() {
                     onPurchaseMax={() => buyUpgradeMax('slimeMovementSpeed')}
                     maxed={isMaxed('slimeMovementSpeed')}
                   />
+                  )}
                   <GameUpgradeRow
                     title="Coin respawn"
                     description="Shorten time between coin spawns."
@@ -2680,6 +2595,7 @@ export default function App() {
                     onPurchaseMax={() => buyUpgradeMax('coinValue')}
                     maxed={isMaxed('coinValue')}
                   />
+                  {state.slimes.length > 0 && (
                   <GameUpgradeRow
                     title="Slime cap"
                     description="Equip more slimes to collect coins at once."
@@ -2697,6 +2613,7 @@ export default function App() {
                     onPurchaseMax={() => buyUpgradeMax('slimeCap')}
                     maxed={isMaxed('slimeCap')}
                   />
+                  )}
                       </>
                     );
                   })()}
@@ -2787,7 +2704,7 @@ function GameUpgradeRow({
       )}
       <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-100/90 bg-white/80 px-3 py-1.5 text-xs font-bold tabular-nums leading-tight">
         <span className="min-w-0 truncate text-zinc-700">{currentStat}</span>
-        <span className="shrink-0 text-zinc-300" aria-hidden>→</span>
+        <span className="shrink-0 text-base font-black text-emerald-500" aria-hidden>→</span>
         <span className="min-w-0 truncate text-right font-black text-orange-600">{nextStat}</span>
       </div>
       <div className="mt-2 flex gap-2">
