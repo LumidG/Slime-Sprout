@@ -15,6 +15,10 @@ interface LevelCompletionBarProps {
   worldCoinsCollected: number;
   goalsClaimed: [boolean, boolean, boolean, boolean, boolean];
   onClaim: (goalIndex: number) => void;
+  /** Whether all game upgrades are currently maxed (gates the final goal's collect button). */
+  allUpgradesMaxed: boolean;
+  /** 0–1 progress toward maxing all upgrades, used to fill the final goal's bar segment. */
+  upgradesProgress: number;
 }
 
 const PARTICLE_COLORS_NORMAL = ['#6ee7b7', '#34d399', '#fbbf24', '#ffffff', '#86efac'];
@@ -22,7 +26,7 @@ const PARTICLE_COLORS_FINAL = ['#fbbf24', '#f59e0b', '#ec4899', '#8b5cf6', '#636
 const PARTICLE_COUNT_NORMAL = 14;
 const PARTICLE_COUNT_FINAL = 22;
 
-export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim }: LevelCompletionBarProps) {
+export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim, allUpgradesMaxed, upgradesProgress }: LevelCompletionBarProps) {
   const [particles, setParticles] = useState<Particle[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
   const particleIdRef = useRef(0);
@@ -33,14 +37,25 @@ export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim 
   const activeGoal = allDone ? null : LEVEL_GOALS[activeGoalIndex];
   const prevThreshold = (!allDone && activeGoalIndex > 0) ? LEVEL_GOALS[activeGoalIndex - 1].threshold : 0;
   const rangeSize = activeGoal ? activeGoal.threshold - prevThreshold : 1;
-  const progressInRange = allDone ? 1 : Math.min(1, Math.max(0, (worldCoinsCollected - prevThreshold) / rangeSize));
+
+  // For the final upgrade-based goal, fill the bar segment with upgrade progress.
+  const progressInRange = allDone
+    ? 1
+    : activeGoal?.requiresAllUpgradesMaxed
+      ? upgradesProgress
+      : Math.min(1, Math.max(0, (worldCoinsCollected - prevThreshold) / rangeSize));
 
   const claimedCount = goalsClaimed.filter(Boolean).length;
   const fillPct = allDone
     ? 100
     : ((claimedCount + progressInRange) / LEVEL_GOALS.length) * 100;
 
-  const isReady = !allDone && worldCoinsCollected >= (activeGoal?.threshold ?? Infinity);
+  // Final goal is ready when all upgrades are maxed; other goals use the coin threshold.
+  const isReady = !allDone && (
+    activeGoal?.requiresAllUpgradesMaxed
+      ? allUpgradesMaxed
+      : worldCoinsCollected >= (activeGoal?.threshold ?? Infinity)
+  );
 
   const handleClaim = useCallback(() => {
     if (!isReady || isClaiming || activeGoalIndex === -1) return;

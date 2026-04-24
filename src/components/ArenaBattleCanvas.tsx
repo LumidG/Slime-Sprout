@@ -26,11 +26,12 @@ function arenaVerticalSideAnchor(
   height: number,
   index: number,
   teamSize: number,
-  side: 'left' | 'right'
+  side: 'left' | 'right',
+  topPad = 28
 ): { x: number; y: number } {
   const marginX = Math.max(14, width * 0.07);
   const x = side === 'left' ? marginX : width - marginX;
-  const marginY = 28;
+  const marginY = topPad;
   const span = Math.max(0, height - 2 * marginY);
   const y =
     teamSize <= 1 ? height * 0.5 : marginY + (index / Math.max(1, teamSize - 1)) * span;
@@ -450,11 +451,11 @@ export function ArenaBattleCanvas({
     return () => ro.disconnect();
   }, []);
 
-  const initIfNeeded = (width: number, height: number) => {
+  const initIfNeeded = (width: number, height: number, topPad: number) => {
     const { playerSlimes: ps, enemies: en } = propsRef.current;
     ps.forEach((s, i) => {
       if (!slimesRef.current[s.id]) {
-        const a = arenaVerticalSideAnchor(width, height, i, ps.length, 'left');
+        const a = arenaVerticalSideAnchor(width, height, i, ps.length, 'left', topPad);
         slimesRef.current[s.id] = {
           x: a.x,
           y: a.y,
@@ -465,7 +466,7 @@ export function ArenaBattleCanvas({
     });
     en.forEach((e, i) => {
       if (!slimesRef.current[e.id]) {
-        const a = arenaVerticalSideAnchor(width, height, i, en.length, 'right');
+        const a = arenaVerticalSideAnchor(width, height, i, en.length, 'right', topPad);
         slimesRef.current[e.id] = {
           x: a.x,
           y: a.y,
@@ -482,11 +483,20 @@ export function ArenaBattleCanvas({
     const { width, height } = dims.current;
     if (width < 20 || height < 20) return;
 
-    initIfNeeded(width, height);
-
     const frameScale = deltaTime / 16.67;
     const timeNow = Date.now();
     const midX = width / 2;
+
+    // Scale all sizes/distances relative to canvas dimensions so slimes stay visible on any screen.
+    const scale = Math.max(Math.min(width / 200, height / 160, 2.5), 0.7);
+    const scaledTopPad = Math.round(34 * scale);
+    const scaledSidePad = Math.round(22 * scale);
+    const scaledMinSep = ARENA_MELEE_MIN_SEPARATION_PX * scale;
+    const scaledMinAttack = ARENA_MELEE_MIN_ATTACK_DIST_PX * scale;
+    const scaledMaxAttack = ARENA_MELEE_MAX_ATTACK_DIST_PX * scale;
+    const crossMidAllowance = Math.round(44 * scale);
+
+    initIfNeeded(width, height, scaledTopPad);
 
     const cycleTime = 30000;
     const activeDuration = 5000;
@@ -541,6 +551,7 @@ export function ArenaBattleCanvas({
       })();
 
       let chaseDir = { x: 0, y: 0 };
+      let inMeleeRange = false;
       if (opponentPos) {
         const dx = opponentPos.x - sPos.x;
         const dy = opponentPos.y - sPos.y;
@@ -548,14 +559,14 @@ export function ArenaBattleCanvas({
         if (dist > 2) {
           const nx = dx / dist;
           const ny = dy / dist;
-          if (dist > ARENA_MELEE_MAX_ATTACK_DIST_PX) {
+          if (dist > scaledMaxAttack) {
             chaseDir = { x: nx, y: ny };
-          } else if (dist < ARENA_MELEE_MIN_SEPARATION_PX + 6) {
-            chaseDir = { x: -nx * 0.32, y: -ny * 0.32 };
+          } else if (dist < scaledMinSep + 2 * scale) {
+            chaseDir = { x: -nx * 0.25, y: -ny * 0.25 };
           } else {
-            const px = -ny;
-            const py = nx;
-            chaseDir = { x: px * 0.38, y: py * 0.38 };
+            // In attack range — hold position and fight, no orbiting
+            inMeleeRange = true;
+            chaseDir = { x: 0, y: 0 };
           }
         }
       }
@@ -565,13 +576,14 @@ export function ArenaBattleCanvas({
       let sMoveDir = { x: 0, y: 0 };
       if (chaseLen > 0.01) {
         sMoveDir = chaseDir;
-      } else if (anchorLen > 0.01) {
+      } else if (anchorLen > 0.01 && !inMeleeRange) {
         sMoveDir = anchorDir;
       }
 
       const time = Date.now() / 1000;
       const wanderAngle = (time + index * 123.45) * 1.4;
-      const wanderAmp = opponentPos ? 0.1 : 0.18;
+      // Nearly eliminate wander when actively fighting so slimes hold their ground
+      const wanderAmp = inMeleeRange ? 0.015 : opponentPos ? 0.1 : 0.18;
       const wanderX = Math.cos(wanderAngle) * wanderAmp;
       const wanderY = Math.sin(wanderAngle) * wanderAmp;
       const finalMoveX = sMoveDir.x + wanderX;
@@ -590,8 +602,9 @@ export function ArenaBattleCanvas({
         const dx = sPos.x - otherPos.x;
         const dy = sPos.y - otherPos.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 25 && dist > 0) {
-          const push = (25 - dist) * 0.05;
+        const teamSep = 25 * scale;
+        if (dist < teamSep && dist > 0) {
+          const push = (teamSep - dist) * 0.05;
           sPos.x += (dx / dist) * push;
           sPos.y += (dy / dist) * push;
         }
@@ -600,20 +613,21 @@ export function ArenaBattleCanvas({
       const pDx = sPos.x - anchor.x;
       const pDy = sPos.y - anchor.y;
       const pDist = Math.hypot(pDx, pDy);
-      if (pDist < 22 && pDist > 0) {
-        const push = (22 - pDist) * 0.1;
+      const anchorSep = 22 * scale;
+      if (pDist < anchorSep && pDist > 0) {
+        const push = (anchorSep - pDist) * 0.1;
         sPos.x += (pDx / pDist) * push;
         sPos.y += (pDy / pDist) * push;
       }
 
       /** Let both teams meet in the center for melee (was hard-split at midline). */
       if (side === 'left') {
-        sPos.x = Math.min(sPos.x, midX + 44);
+        sPos.x = Math.min(sPos.x, midX + crossMidAllowance);
       } else {
-        sPos.x = Math.max(sPos.x, midX - 44);
+        sPos.x = Math.max(sPos.x, midX - crossMidAllowance);
       }
-      sPos.x = Math.max(10, Math.min(width - 10, sPos.x));
-      sPos.y = Math.max(10, Math.min(height - 10, sPos.y));
+      sPos.x = Math.max(scaledSidePad, Math.min(width - scaledSidePad, sPos.x));
+      sPos.y = Math.max(scaledTopPad, Math.min(height - scaledSidePad, sPos.y));
 
       {
         const sdx = sPos.x - beforeMove.x;
@@ -633,14 +647,14 @@ export function ArenaBattleCanvas({
       const foe = en[i];
       const fp = foe ? slimesRef.current[foe.id] : undefined;
       const opp = fp ? { x: fp.x, y: fp.y } : null;
-      const anchorLeft = arenaVerticalSideAnchor(width, height, i, pl.length, 'left');
+      const anchorLeft = arenaVerticalSideAnchor(width, height, i, pl.length, 'left', scaledTopPad);
       updateSlime(s, i, pl, anchorLeft, 'left', opp);
     });
     enemyTeam.forEach((slime, i) => {
       const pal = pl[i];
       const pp = pal ? slimesRef.current[pal.id] : undefined;
       const opp = pp ? { x: pp.x, y: pp.y } : null;
-      const anchorRight = arenaVerticalSideAnchor(width, height, i, enemyTeam.length, 'right');
+      const anchorRight = arenaVerticalSideAnchor(width, height, i, enemyTeam.length, 'right', scaledTopPad);
       updateSlime(slime, i + 10, enemyTeam, anchorRight, 'right', opp);
     });
 
@@ -653,8 +667,8 @@ export function ArenaBattleCanvas({
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.hypot(dx, dy) || 0.001;
-          if (dist >= ARENA_MELEE_MIN_SEPARATION_PX) continue;
-          const push = ((ARENA_MELEE_MIN_SEPARATION_PX - dist) / 2) * 0.75;
+          if (dist >= scaledMinSep) continue;
+          const push = ((scaledMinSep - dist) / 2) * 0.75;
           const nx = dx / dist;
           const ny = dy / dist;
           pa.x -= nx * push;
@@ -670,14 +684,14 @@ export function ArenaBattleCanvas({
       for (const s of pl) {
         const p = slimesRef.current[s.id];
         if (!p) continue;
-        p.x = Math.max(10, Math.min(width - 10, p.x));
-        p.y = Math.max(10, Math.min(height - 10, p.y));
+        p.x = Math.max(scaledSidePad, Math.min(width - scaledSidePad, p.x));
+        p.y = Math.max(scaledTopPad, Math.min(height - scaledSidePad, p.y));
       }
       for (const e of en) {
         const p = slimesRef.current[e.id];
         if (!p) continue;
-        p.x = Math.max(10, Math.min(width - 10, p.x));
-        p.y = Math.max(10, Math.min(height - 10, p.y));
+        p.x = Math.max(scaledSidePad, Math.min(width - scaledSidePad, p.x));
+        p.y = Math.max(scaledTopPad, Math.min(height - scaledSidePad, p.y));
       }
     };
     clampAll();
@@ -709,7 +723,7 @@ export function ArenaBattleCanvas({
       const ePos = slimesRef.current[eDisp.id];
       if (!pPos || !ePos) continue;
       const dist = Math.hypot(pPos.x - ePos.x, pPos.y - ePos.y);
-      const inRange = dist >= ARENA_MELEE_MIN_ATTACK_DIST_PX && dist <= ARENA_MELEE_MAX_ATTACK_DIST_PX;
+      const inRange = dist >= scaledMinAttack && dist <= scaledMaxAttack;
       if (!inRange) continue;
 
       // Player slime attacks
@@ -846,8 +860,9 @@ export function ArenaBattleCanvas({
       }
 
       ctx.save();
-      ctx.translate(pos.x, pos.y + jumpY);
-      ctx.translate(lungeX, lungeY);
+      ctx.translate(pos.x, pos.y + jumpY * scale);
+      ctx.translate(lungeX * scale, lungeY * scale);
+      ctx.scale(scale, scale);
 
       ctx.save();
       ctx.translate(0, -jumpY);

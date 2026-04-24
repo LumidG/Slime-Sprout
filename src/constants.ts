@@ -593,6 +593,24 @@ export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot, worldInde
   );
 }
 
+/**
+ * Returns a 0–1 fraction representing how close the player is to maxing every
+ * game upgrade for the given world. Used to fill the final level-goal bar segment.
+ */
+export function getGameUpgradesMaxedProgress(upgrades: GameUpgradeSnapshot, worldIndex = 0): number {
+  const caps = getMaxGameUpgradeLevelForWorld(worldIndex);
+  const items = [
+    upgrades.automation > 0 ? 1 : 0,
+    Math.min(1, caps.movementSpeed > 0 ? upgrades.movementSpeed / caps.movementSpeed : 1),
+    Math.min(1, caps.slimeMovementSpeed > 0 ? upgrades.slimeMovementSpeed / caps.slimeMovementSpeed : 1),
+    Math.min(1, caps.respawnTime > 0 ? upgrades.respawnTime / caps.respawnTime : 1),
+    Math.min(1, caps.coinValue > 0 ? upgrades.coinValue / caps.coinValue : 1),
+    Math.min(1, caps.coinCap > 0 ? upgrades.coinCap / caps.coinCap : 1),
+    Math.min(1, caps.slimeCap > 0 ? upgrades.slimeCap / caps.slimeCap : 1),
+  ];
+  return items.reduce((a, b) => a + b, 0) / items.length;
+}
+
 export type GameWorldDecoration = 'grass' | 'flowers' | 'reeds' | 'sand' | 'snow' | 'mist';
 
 export type GameWorldTheme = {
@@ -685,6 +703,11 @@ export interface LevelGoal {
   /** Human-readable reward summary shown on the collect button. */
   rewardLabel: string;
   isFinal?: boolean;
+  /**
+   * If true the goal is considered ready when all game upgrades are maxed
+   * (instead of a coin-collection threshold). Claiming it unlocks the next world.
+   */
+  requiresAllUpgradesMaxed?: boolean;
 }
 
 /**
@@ -730,19 +753,20 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
   },
   {
     threshold: 4000,
-    label: 'Collect 4,000 coins',
+    label: 'Max all upgrades',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 3,
     rewardSlime: true,
     rewardLabel: '+3 Tickets + Mystery Slime ✨',
     isFinal: true,
+    requiresAllUpgradesMaxed: true,
   },
 ] as const;
 
-/** Price per single egg. */
+/** Price per single egg (legacy coins cost — kept for reference). */
 export const EGG_COST = 50;
-/** 10-egg bundle (cheaper per egg than 10 × EGG_COST). */
+/** 10-egg bundle coins cost (legacy). */
 export const EGG_BULK_10_COST = 450;
 
 export function eggPurchaseCost(amount: number): number {
@@ -750,11 +774,24 @@ export function eggPurchaseCost(amount: number): number {
   return EGG_COST * amount;
 }
 
+/** Tickets required to buy 1 slime from the collection shop. */
+export const SLIME_COST_TICKETS = 1;
+/** Tickets required to buy 10 slimes (bulk discount: 9 tickets for 10). */
+export const SLIME_BULK_10_COST_TICKETS = 9;
+
+export function slimePurchaseCostTickets(amount: number): number {
+  if (amount === 10) return SLIME_BULK_10_COST_TICKETS;
+  return SLIME_COST_TICKETS * amount;
+}
+
 /** Coins required to breed two slimes (market tab). @deprecated Breeding now costs tickets. */
 export const BREEDING_COST = 500;
 
 /** Tickets required to breed two slimes. One ticket is awarded every 3 arena wins. */
-export const BREEDING_COST_TICKETS = 1;
+export const BREEDING_COST_TICKETS = 3;
+
+/** Maximum stat level for a single slime stat (health / strength / agility). */
+export const MAX_SLIME_STAT_LEVEL = 90;
 
 export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.8, level));
 

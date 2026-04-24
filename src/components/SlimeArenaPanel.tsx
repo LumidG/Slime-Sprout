@@ -353,14 +353,14 @@ export function SlimeArenaPanel({
                 key={`tm-${i}`}
                 type="button"
                 onClick={() => id && toggleSlimeInLineup(id)}
-                className="flex h-16 w-[4rem] flex-col items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-white/90 py-0.5 shadow-sm transition-all"
+                className="flex min-h-[4.5rem] w-[4rem] flex-col items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-white/90 py-1.5 shadow-sm transition-all"
               >
                 {id ? (
                   <>
                     {lineSlime && (
-                      <SlimeStackSprite slime={lineSlime} size="md" className="mb-0.5 ring-2 ring-white" />
+                      <SlimeStackSprite slime={lineSlime} size="sm" className="mb-1 ring-2 ring-white" />
                     )}
-                    <span className="max-w-full truncate px-0.5 text-[7px] font-black text-zinc-700">
+                    <span className="max-w-full truncate px-0.5 text-[7px] font-black leading-tight text-zinc-700">
                       {lineSlime?.name ?? '?'}
                     </span>
                   </>
@@ -393,6 +393,11 @@ export function SlimeArenaPanel({
                     : 'border-emerald-50 bg-white shadow-sm hover:border-violet-200'
                 }`}
               >
+                {inLineup && (
+                  <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[8px] font-black leading-none text-white shadow">
+                    {lineupIds.indexOf(slime.id) + 1}
+                  </span>
+                )}
                 <SlimeStackSprite slime={slime} size="md" className="shadow-inner" />
                 <div className="w-full truncate text-center text-[8px] font-black leading-none text-gray-800">{slime.name}</div>
                 <div className="flex w-full items-center justify-center gap-1.5 px-0.5">
@@ -453,9 +458,6 @@ export function SlimeArenaPanel({
           >
             <div className="shrink-0 border-b border-violet-500/30 bg-black/20 px-3 py-2 text-center">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-200/90">Arena</p>
-              <p className="text-[11px] font-bold text-violet-100/80">
-                Slimes brawl in the center and chip each other down — grab energy orbs on your side to charge arena abilities.
-              </p>
             </div>
             <div className="relative flex min-h-0 flex-1 flex-col">
               <AnimatePresence>
@@ -486,9 +488,6 @@ export function SlimeArenaPanel({
               />
             </div>
             <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 py-2">
-              <p className="mb-1.5 text-center text-[8px] font-black uppercase tracking-wider text-violet-300/90">
-                Arena skills (energy bar → Go! → meta cooldown after battle)
-              </p>
               <div className="grid max-h-[88px] grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto no-scrollbar">
                 <div className="space-y-1">
                   {battleSession.playerSlimes.map((slime) => {
