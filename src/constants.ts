@@ -90,12 +90,11 @@ export function gameRespawnIntervalMs(respawnTimeLevel: number): number {
 
 /**
  * Base coins per collect from the coin-value upgrade **tier**.
- * Every ~2 tiers +1 💰, with no hard cap so that later worlds (tiers up to 45)
- * still provide meaningful progression (e.g. tier 45 → ~23 💰).
+ * Each tier adds exactly +1 💰 (tier 1 = 1 coin, tier 2 = 2 coins, …).
  */
 export function gameCoinValuePerCollect(coinValueTier: number): number {
   const t = Math.max(1, Math.floor(coinValueTier));
-  return Math.max(1, Math.ceil(t / 2));
+  return t;
 }
 
 /** How much shorter the spawn interval gets after the next respawn upgrade. */
@@ -354,6 +353,8 @@ export type ArenaEncounter = {
   /** Hidden — used only for resolution. */
   enemyPower: number;
   rewardCoins: number;
+  /** Tickets awarded on a win — always 1–3, seeded. */
+  rewardTickets: number;
 };
 
 /** Seeded PRNG (same family as slime market). */
@@ -409,7 +410,8 @@ export function generateArenaEncounter(seed: number, arenaWins = 0): ArenaEncoun
   } else {
     enemyPower = 95 + Math.floor(r() * 145);
   }
-  const rewardCoins = 32 + Math.floor(enemyPower * 0.38);
+  const rewardCoins = 350 + Math.floor(enemyPower * 4.5);
+  const rewardTickets = 1 + Math.floor(r() * 3);
 
   return {
     seed,
@@ -418,6 +420,7 @@ export function generateArenaEncounter(seed: number, arenaWins = 0): ArenaEncoun
     secondaryStat,
     enemyPower,
     rewardCoins,
+    rewardTickets,
   };
 }
 
@@ -550,7 +553,7 @@ export const UPGRADE_COSTS = {
    * Slime Cap: +1 equip slot per tier (base 3 → up to 20), 17 tiers total.
    * Intentionally the most expensive upgrade — roughly doubles each tier.
    */
-  slimeCap: (level: number) => Math.floor(200 * Math.pow(1.5, level)),
+  slimeCap: (level: number) => Math.floor(100 * Math.pow(1.5, level)),
 };
 
 /** Caps for shop upgrades on the game tab (automation is 0/1). World 0 (first level) baseline. */
@@ -615,7 +618,6 @@ export function isGameUpgradeMaxed(
 export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot, worldIndex = 0): boolean {
   const caps = getMaxGameUpgradeLevelForWorld(worldIndex);
   return (
-    upgrades.automation > 0 &&
     upgrades.movementSpeed >= caps.movementSpeed &&
     upgrades.slimeMovementSpeed >= caps.slimeMovementSpeed &&
     upgrades.respawnTime >= caps.respawnTime &&
@@ -632,7 +634,6 @@ export function areAllGameUpgradesMaxed(upgrades: GameUpgradeSnapshot, worldInde
 export function getGameUpgradesMaxedProgress(upgrades: GameUpgradeSnapshot, worldIndex = 0): number {
   const caps = getMaxGameUpgradeLevelForWorld(worldIndex);
   const items = [
-    upgrades.automation > 0 ? 1 : 0,
     Math.min(1, caps.movementSpeed > 0 ? upgrades.movementSpeed / caps.movementSpeed : 1),
     Math.min(1, caps.slimeMovementSpeed > 0 ? upgrades.slimeMovementSpeed / caps.slimeMovementSpeed : 1),
     Math.min(1, caps.respawnTime > 0 ? upgrades.respawnTime / caps.respawnTime : 1),
@@ -748,8 +749,8 @@ export interface LevelGoal {
  */
 export const LEVEL_GOALS: readonly LevelGoal[] = [
   {
-    threshold: 100,
-    label: 'Collect 100 coins',
+    threshold: 15,
+    label: 'Collect 15 coins',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 1,
@@ -829,7 +830,7 @@ export const SLIME_UPGRADE_COST = (level: number) => Math.floor(50 * Math.pow(1.
 
 /** Stat increase per upgrade; must match slime stat upgrade logic in App. */
 export const SLIME_STAT_UPGRADE_DELTA: Record<keyof SlimeStats, number> = {
-  health: 5,
+  health: 2,
   strength: 2,
   agility: 2,
 };

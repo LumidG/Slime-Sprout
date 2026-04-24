@@ -1,20 +1,31 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, HeartCrack, Sword, Wind, Swords, Coins, Zap } from 'lucide-react';
+import { Heart, HeartCrack, Sword, Wind, Swords, Trophy, ChevronsRight, FastForward } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
 import {
   ARENA_TEAM_SIZE,
-  ARENA_ABILITY_META,
   ARENA_PRE_BATTLE_COUNTDOWN_STEP_MS,
   generateArenaEncounter,
   generateArenaEnemyTeam,
   getArenaStatLabel,
   isArenaAbilityOnCooldown,
+  resolveArenaBattle,
   type ArenaEncounter,
 } from '../constants';
-import { ArenaBattleCanvas } from './ArenaBattleCanvas';
+import { ArenaBattleCanvas, type ArenaBattleStats } from './ArenaBattleCanvas';
 import { SlimeStackSprite } from './SlimeStackSprite';
 import { useArenaSfx } from '../hooks/useArenaSfx';
+import { useCoinCollectSfx } from '../hooks/useCoinCollectSfx';
+
+type ClaimParticle = {
+  id: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  type: 'coin' | 'ticket';
+  delay: number;
+};
 
 type Props = {
   slimes: Slime[];
@@ -38,64 +49,13 @@ type Props = {
   canPlaySfx?: boolean;
 };
 
-function formatCooldown(ms: number): string {
-  const sec = Math.ceil(ms / 1000);
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m <= 0) return `${s}s`;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function AbilityCooldownRow({
-  ability,
-  label,
-  cooldownLeftMs,
-  maxCooldownMs,
-  battleMode,
-  usedThisFight,
-}: {
-  ability: SlimeArenaAbility;
-  label: string;
-  cooldownLeftMs: number;
-  maxCooldownMs: number;
-  battleMode: boolean;
-  usedThisFight: boolean;
-}) {
-  if (ability === 'None') {
-    return (
-      <div className="mb-1 flex h-5 w-full items-center justify-center rounded-md bg-zinc-800/40 px-1 text-[7px] font-bold text-zinc-500">
-        No ability
-      </div>
-    );
-  }
-  const ready = cooldownLeftMs <= 0;
-  const fill = ready ? 1 : maxCooldownMs > 0 ? Math.max(0, 1 - cooldownLeftMs / maxCooldownMs) : 0;
-  return (
-    <div className="mb-1 w-full space-y-0.5">
-      <div className="flex items-center justify-between gap-1 px-0.5 text-[7px] font-black uppercase tracking-tight text-violet-100/90">
-        <span className="flex min-w-0 items-center gap-0.5 truncate">
-          <Zap className="h-2.5 w-2.5 shrink-0 text-amber-300" aria-hidden />
-          <span className="truncate">{label}</span>
-        </span>
-        {battleMode && usedThisFight ? (
-          <span className="shrink-0 text-amber-200">Go!</span>
-        ) : ready ? (
-          <span className="shrink-0 text-emerald-300">Ready</span>
-        ) : (
-          <span className="shrink-0 text-amber-100/90">{formatCooldown(cooldownLeftMs)}</span>
-        )}
-      </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800/80 ring-1 ring-white/10">
-        <div
-          className={`h-full rounded-full transition-[width] ${ready ? 'bg-emerald-400' : 'bg-violet-400'}`}
-          style={{ width: `${Math.round(fill * 100)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 const emptyTeam = (): (string | null)[] => Array.from({ length: ARENA_TEAM_SIZE }, () => null);
+
+const INITIAL_LIVE_STATS: ArenaBattleStats = {
+  hp: Array.from({ length: ARENA_TEAM_SIZE }, () => 1),
+  abilityNextProc: {},
+  chargeStart: {},
+};
 
 export function SlimeArenaPanel({
   slimes,
@@ -120,6 +80,7 @@ export function SlimeArenaPanel({
   const [result, setResult] = useState<{ won: boolean; encounter: ArenaEncounter } | null>(null);
 
   const sfx = useArenaSfx(canPlaySfx, sfxEnabled, 1);
+  const playCoinCollect = useCoinCollectSfx(canPlaySfx, sfxEnabled, 1);
 
   type BattleSession = {
     encounter: ArenaEncounter;
@@ -143,6 +104,12 @@ export function SlimeArenaPanel({
   /** 3 → 2 → 1 during pre-battle countdown; 0 = fight running; null = not in arena fight. */
   const [preBattleCountdown, setPreBattleCountdown] = useState<number | null>(null);
   const [liveAbilityFired, setLiveAbilityFired] = useState<Record<string, boolean>>({});
+  const [battleSpeed, setBattleSpeed] = useState<1 | 2>(1);
+  const [liveStats, setLiveStats] = useState<ArenaBattleStats>(INITIAL_LIVE_STATS);
+
+  useEffect(() => {
+    if (!battleSession) setLiveStats(INITIAL_LIVE_STATS);
+  }, [battleSession]);
 
   useEffect(() => {
     onBattleActiveChange?.(battleSession != null);
@@ -155,7 +122,10 @@ export function SlimeArenaPanel({
   }, [onBattleActiveChange]);
 
   useEffect(() => {
-    if (!battleSession) setPreBattleCountdown(null);
+    if (!battleSession) {
+      setPreBattleCountdown(null);
+      setBattleSpeed(1);
+    }
   }, [battleSession]);
 
   useEffect(() => {
@@ -298,6 +268,35 @@ export function SlimeArenaPanel({
     setPreBattleCountdown(3);
   };
 
+  const toggleSpeed = useCallback(() => {
+    setBattleSpeed((s) => (s === 1 ? 2 : 1));
+  }, []);
+
+  const skipBattle = useCallback(() => {
+    const ctx = resolveContextRef.current;
+    if (!ctx) return;
+    const abilityUsedIds: Record<string, boolean> = {};
+    [ctx.s0, ctx.s1, ctx.s2, ctx.s3].forEach((s) => {
+      if (s.arenaAbility !== 'None') {
+        abilityUsedIds[s.id] = !isArenaAbilityOnCooldown(slimeArenaAbilityCooldownUntil, s.id, now);
+      }
+    });
+    const { won } = resolveArenaBattle(
+      ctx.encounter,
+      [ctx.s0, ctx.s1, ctx.s2, ctx.s3],
+      abilityUsedIds,
+      ctx.arenaWinsBeforeBattle
+    );
+    const arenaAbilityUserIds = Object.keys(abilityUsedIds).filter((id) => abilityUsedIds[id]);
+    playerAbilityFiredRef.current = {};
+    battleEarlyEndRef.current = null;
+    resolveContextRef.current = null;
+    setBattleSession(null);
+    setLiveAbilityFired({});
+    setResult({ won, encounter: ctx.encounter });
+    onBattleEnd({ won, encounter: ctx.encounter, teamIds: ctx.teamIds, arenaAbilityUserIds });
+  }, [slimeArenaAbilityCooldownUntil, now, onBattleEnd]);
+
   const closeVictory = useCallback(() => {
     setResult(null);
     setEncounterSeed((s) => s + 1);
@@ -317,12 +316,85 @@ export function SlimeArenaPanel({
     onReturnToArenaTab?.();
   }, [clearLineup, onReturnToArenaTab]);
 
+  const [claimParticles, setClaimParticles] = useState<ClaimParticle[]>([]);
+  const [isCollecting, setIsCollecting] = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const coinTileRef = useRef<HTMLDivElement>(null);
+  const ticketTileRef = useRef<HTMLDivElement>(null);
+  const particleIdRef = useRef(0);
+
+  // Reset collecting state whenever the result disappears.
+  useEffect(() => {
+    if (!result) {
+      setIsCollecting(false);
+      setClaimParticles([]);
+    }
+  }, [result]);
+
+  const handleClaimRewards = useCallback(() => {
+    if (isCollecting) return;
+    setIsCollecting(true);
+
+    const backdrop = backdropRef.current;
+    const coinTile = coinTileRef.current;
+    const ticketTile = ticketTileRef.current;
+    const newParticles: ClaimParticle[] = [];
+
+    const backdropH = backdrop ? backdrop.getBoundingClientRect().height : 600;
+
+    const spawnFromTile = (
+      tileEl: HTMLDivElement | null,
+      type: 'coin' | 'ticket',
+      count: number
+    ) => {
+      if (!backdrop || !tileEl) return;
+      const br = backdrop.getBoundingClientRect();
+      const tr = tileEl.getBoundingClientRect();
+      const cx = tr.left + tr.width / 2 - br.left;
+      const cy = tr.top + tr.height / 2 - br.top;
+      for (let i = 0; i < count; i++) {
+        const startX = cx + (Math.random() - 0.5) * tr.width * 0.55;
+        const startY = cy + (Math.random() - 0.5) * tr.height * 0.55;
+        // Fly all the way to (or past) the top of the backdrop — like coins racing to the counter
+        const endY = -Math.max(backdropH * 0.15, startY + 40) - Math.random() * 80;
+        newParticles.push({
+          id: particleIdRef.current++,
+          startX,
+          startY,
+          endX: startX + (Math.random() - 0.5) * 160,
+          endY,
+          type,
+          delay: Math.random() * 0.22,
+        });
+      }
+    };
+
+    spawnFromTile(coinTile, 'coin', 12);
+    spawnFromTile(ticketTile, 'ticket', 7);
+    setClaimParticles(newParticles);
+
+    // Staggered chimes matching the particle burst — mirrors the main-screen coin collect SFX
+    playCoinCollect(1);
+    [110, 230, 360, 500].forEach((ms) => setTimeout(() => playCoinCollect(1), ms));
+
+    setTimeout(() => {
+      setClaimParticles([]);
+      closeVictory();
+    }, 980);
+  }, [isCollecting, closeVictory, playCoinCollect]);
+
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden uppercase">
       <div className="shrink-0 space-y-2 border-b border-violet-200/80 bg-gradient-to-b from-violet-50 via-white to-orange-50/40 px-3 pb-2 pt-3">
         <div className="flex flex-col items-center gap-0.5">
           <Swords className="h-7 w-7 text-violet-600 drop-shadow-sm" aria-hidden />
           <h2 className="text-base font-black uppercase tracking-widest text-emerald-950">Slime Arena</h2>
+          <div className="flex items-center gap-1 rounded-full bg-gradient-to-r from-violet-100 to-purple-100 px-2.5 py-0.5 ring-1 ring-violet-200/80">
+            <Trophy className="h-2.5 w-2.5 shrink-0 text-violet-500" aria-hidden />
+            <span className="text-[9px] font-black uppercase tracking-wide text-violet-700">
+              Arena Lvl {arenaWins + 1}
+            </span>
+          </div>
         </div>
 
         <div className="rounded-xl border border-violet-200/90 bg-white/90 p-2 shadow-sm">
@@ -489,52 +561,109 @@ export function SlimeArenaPanel({
                 paused={
                   (preBattleCountdown != null && preBattleCountdown > 0) || optionsMenuOpen
                 }
+                speedMultiplier={battleSpeed}
                 onHit={sfx.onHit}
                 onDodge={sfx.onDodge}
                 onAbility={sfx.onAbility}
+                onStatsUpdate={setLiveStats}
               />
             </div>
-            <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 py-2">
-              <div className="grid max-h-[88px] grid-cols-2 gap-x-2 gap-y-1 overflow-y-auto no-scrollbar">
-                <div className="space-y-1">
-                  {battleSession.playerSlimes.map((slime) => {
-                    const meta = ARENA_ABILITY_META[slime.arenaAbility];
-                    const onCd = isArenaAbilityOnCooldown(slimeArenaAbilityCooldownUntil, slime.id, now);
-                    const cdLeft = onCd ? Math.max(0, (slimeArenaAbilityCooldownUntil[slime.id] ?? 0) - now) : 0;
-                    const used = Boolean(liveAbilityFired[slime.id]);
-                    return (
-                      <div key={slime.id} className="rounded-lg border border-emerald-500/20 bg-emerald-950/30 px-1.5 py-1">
-                        <p className="mb-0.5 truncate text-[7px] font-black text-emerald-100/90">{slime.name}</p>
-                        <AbilityCooldownRow
-                          ability={slime.arenaAbility}
-                          label={meta.name}
-                          cooldownLeftMs={used ? 0 : cdLeft}
-                          maxCooldownMs={meta.cooldownMs}
-                          battleMode
-                          usedThisFight={used}
+            {preBattleCountdown === 0 && (
+              <div className="shrink-0 flex items-center justify-center gap-3 px-4 py-2.5">
+                <button
+                  type="button"
+                  onClick={toggleSpeed}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-sm font-black uppercase tracking-wide transition-all ${
+                    battleSpeed === 2
+                      ? 'bg-amber-400 text-amber-950 shadow-lg shadow-amber-900/30'
+                      : 'bg-white/15 text-violet-100 hover:bg-white/25'
+                  }`}
+                >
+                  <FastForward className="h-4 w-4" aria-hidden />
+                  {battleSpeed === 2 ? '2× On' : '2× Speed'}
+                </button>
+                <button
+                  type="button"
+                  onClick={skipBattle}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/15 py-3 text-sm font-black uppercase tracking-wide text-violet-100 transition-all hover:bg-white/25"
+                >
+                  <ChevronsRight className="h-4 w-4" aria-hidden />
+                  Skip
+                </button>
+              </div>
+            )}
+            <div className="shrink-0 border-t border-violet-500/20 bg-black/30 px-2 pb-2 pt-1.5">
+              <div className="grid grid-cols-4 gap-x-1.5">
+                {battleSession.playerSlimes.map((slime, i) => {
+                  const hpRatio = Math.max(0, Math.min(1, liveStats.hp[i] ?? 1));
+                  const maxHp = slime.stats.health;
+                  const curHp = Math.max(0, Math.round(hpRatio * maxHp));
+                  const isDead = hpRatio <= 0;
+
+                  const hasAbility = slime.arenaAbility !== 'None';
+                  const nextProc = liveStats.abilityNextProc[slime.id];
+                  const chargeStart = liveStats.chargeStart[slime.id];
+                  const nowMs = Date.now();
+
+                  let chargeProgress = 0;
+                  let countdownSec = 0;
+                  let isUltReady = false;
+                  if (hasAbility && nextProc !== undefined && chargeStart !== undefined) {
+                    const totalChargeTime = Math.max(1, nextProc - chargeStart);
+                    chargeProgress = Math.min(1, Math.max(0, nowMs - chargeStart) / totalChargeTime);
+                    const remaining = Math.max(0, nextProc - nowMs);
+                    countdownSec = remaining / 1000;
+                    isUltReady = remaining <= 0;
+                  }
+
+                  const hpBarColor =
+                    hpRatio > 0.5 ? '#34d399' : hpRatio > 0.25 ? '#fbbf24' : '#fb7185';
+
+                  return (
+                    <div
+                      key={slime.id}
+                      className={`flex min-w-0 flex-col gap-[3px] ${isDead ? 'opacity-35' : ''}`}
+                    >
+                      {/* Name */}
+                      <p className="truncate text-center text-[6.5px] font-black uppercase tracking-tight text-violet-100/80">
+                        {slime.name}
+                      </p>
+
+                      {/* HP bar with number inside */}
+                      <div className="relative h-[14px] w-full overflow-hidden rounded bg-black/60 ring-1 ring-white/10">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded"
+                          style={{ width: `${Math.round(hpRatio * 100)}%`, background: hpBarColor, transition: 'width 0.1s linear' }}
                         />
+                        <span className="relative flex h-full items-center justify-center text-[6.5px] font-black tabular-nums leading-none text-white drop-shadow-[0_1px_3px_rgba(0,0,0,1)]">
+                          {isDead ? 'KO' : `${curHp}/${maxHp}`}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-                <div className="space-y-1">
-                  {battleSession.enemies.map((foe) => {
-                    const meta = ARENA_ABILITY_META[foe.ability];
-                    return (
-                      <div key={foe.id} className="rounded-lg border border-rose-500/20 bg-rose-950/30 px-1.5 py-1">
-                        <p className="mb-0.5 truncate text-[7px] font-black text-rose-100/90">{foe.name}</p>
-                        <AbilityCooldownRow
-                          ability={foe.ability}
-                          label={meta.name}
-                          cooldownLeftMs={0}
-                          maxCooldownMs={meta.cooldownMs || 1}
-                          battleMode
-                          usedThisFight={Boolean(liveAbilityFired[foe.id])}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+
+                      {hasAbility ? (
+                        <>
+                          {/* Energy bar */}
+                          <div className="h-[4px] w-full overflow-hidden rounded-full bg-black/60 ring-1 ring-white/10">
+                            <div
+                              className={`h-full rounded-full ${isUltReady ? 'bg-amber-400' : 'bg-violet-400'}`}
+                              style={{ width: `${Math.round(chargeProgress * 100)}%`, transition: 'width 0.1s linear' }}
+                            />
+                          </div>
+                          {/* Countdown */}
+                          <p
+                            className={`text-center text-[6.5px] font-black tabular-nums leading-none ${
+                              isUltReady ? 'text-amber-300' : 'text-violet-300/70'
+                            }`}
+                          >
+                            {isUltReady ? 'ULT!' : countdownSec < 100 ? `${countdownSec.toFixed(1)}s` : '—'}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-center text-[6.5px] leading-none text-zinc-600">—</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </motion.div>
@@ -544,12 +673,41 @@ export function SlimeArenaPanel({
       <AnimatePresence>
         {result && (
           <motion.div
+            ref={backdropRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 z-[120] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm"
-            onClick={result.won ? closeVictory : closeDefeatTryDifferentTeam}
+            onClick={() => {
+              if (result.won) {
+                if (!isCollecting) closeVictory();
+              } else {
+                closeDefeatTryDifferentTeam();
+              }
+            }}
           >
+            {/* Claim particles — absolute within the backdrop */}
+            {claimParticles.map((p) => (
+              <motion.div
+                key={p.id}
+                className="pointer-events-none absolute z-10"
+                style={{ left: p.startX, top: p.startY }}
+                initial={{ x: 0, y: 0, scale: 1, opacity: 1 }}
+                animate={{ x: p.endX - p.startX, y: p.endY - p.startY, scale: 0.1, opacity: 0 }}
+                transition={{ duration: 0.85, ease: 'easeOut', delay: p.delay }}
+              >
+                {p.type === 'coin' ? (
+                  <div className="relative flex h-7 w-7 items-center justify-center">
+                    <div className="h-7 w-7 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 shadow-lg ring-2 ring-amber-200" />
+                    <div className="absolute h-3.5 w-3.5 rounded-full border-2 border-amber-600/60" />
+                    <div className="absolute -left-0.5 -top-0.5 h-2 w-2 rounded-full bg-white/60" />
+                  </div>
+                ) : (
+                  <span className="text-2xl drop-shadow-md">🎟️</span>
+                )}
+              </motion.div>
+            ))}
+
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
@@ -563,16 +721,52 @@ export function SlimeArenaPanel({
               {result.won ? (
                 <>
                   <div className="mb-3 flex justify-center">
-                    <div className="rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-4 ring-2 ring-amber-300/70">
-                      <Coins className="h-10 w-10 text-orange-700" aria-hidden />
+                    <motion.div
+                      animate={{ rotate: [0, -8, 8, -4, 4, 0], scale: [1, 1.12, 1] }}
+                      transition={{ duration: 0.7, ease: 'easeOut' }}
+                      className="rounded-full bg-gradient-to-br from-amber-100 to-orange-200 p-3.5 ring-2 ring-amber-300/70"
+                    >
+                      <Trophy className="h-9 w-9 text-orange-600" aria-hidden />
+                    </motion.div>
+                  </div>
+                  <h3 className="mb-3 text-center text-xl font-black text-emerald-950">Victory!</h3>
+
+                  {/* Reward tiles */}
+                  <div className="mb-4 flex gap-3">
+                    {/* Coins tile */}
+                    <div
+                      ref={coinTileRef}
+                      className="flex flex-1 flex-col items-center gap-1.5 rounded-2xl border-2 border-amber-300/80 bg-gradient-to-b from-amber-50 to-orange-100 px-2 py-3 shadow-sm"
+                    >
+                      <div className="relative flex h-14 w-14 items-center justify-center">
+                        <div className="h-14 w-14 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 shadow-lg ring-4 ring-amber-200" />
+                        <div className="absolute h-7 w-7 rounded-full border-4 border-amber-600/50" />
+                        <div className="absolute left-2.5 top-2 h-3.5 w-3.5 rounded-full bg-white/55" />
+                      </div>
+                      <span className="text-2xl font-black tabular-nums leading-none text-amber-900">
+                        {result.encounter.rewardCoins.toLocaleString()}
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-amber-700">
+                        Coins
+                      </span>
+                    </div>
+
+                    {/* Tickets tile */}
+                    <div
+                      ref={ticketTileRef}
+                      className="flex flex-1 flex-col items-center gap-1.5 rounded-2xl border-2 border-violet-300/80 bg-gradient-to-b from-violet-50 to-purple-100 px-2 py-3 shadow-sm"
+                    >
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-300 to-purple-500 shadow-lg ring-4 ring-violet-200 text-4xl leading-none">
+                        🎟️
+                      </div>
+                      <span className="text-2xl font-black tabular-nums leading-none text-violet-900">
+                        {result.encounter.rewardTickets}
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-violet-700">
+                        {result.encounter.rewardTickets === 1 ? 'Ticket' : 'Tickets'}
+                      </span>
                     </div>
                   </div>
-                  <h3 className="mb-1 text-center text-xl font-black text-emerald-950">Victory!</h3>
-                  <p className="mb-4 text-center text-sm font-semibold text-emerald-800/85">
-                    Your squad earned{' '}
-                    <span className="font-black text-orange-700">{result.encounter.rewardCoins.toLocaleString()}</span>{' '}
-                    coins.
-                  </p>
                 </>
               ) : (
                 <>
@@ -590,10 +784,11 @@ export function SlimeArenaPanel({
               {result.won ? (
                 <button
                   type="button"
-                  onClick={closeVictory}
-                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-base font-black text-white shadow-lg"
+                  onClick={handleClaimRewards}
+                  disabled={isCollecting}
+                  className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-purple-800 py-3.5 text-base font-black text-white shadow-lg disabled:opacity-60"
                 >
-                  Claim rewards
+                  {isCollecting ? 'Collecting…' : 'Claim rewards'}
                 </button>
               ) : (
                 <div className="flex flex-col gap-2">

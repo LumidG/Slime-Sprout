@@ -187,7 +187,6 @@ export default function App() {
 
   const onboardingMessages = [
     "Welcome! Collect golden coins to buy eggs and hatch cute slimes.",
-    "Upgrade your slimes or breed them to create powerful hybrids!",
     "Let's start collecting. Have fun!"
   ];
 
@@ -599,16 +598,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isLoading, hasStarted, state.activeTab]);
 
-  // Auto-grant automation when the player equips their first slime.
+  // Auto-grant automation as soon as the player owns their first slime.
   useEffect(() => {
     if (isLoading) return;
-    if (state.equippedSlimeIds.length > 0 && state.upgrades.automation === 0) {
+    if (state.slimes.length > 0 && state.upgrades.automation === 0) {
       setState(prev => ({
         ...prev,
         upgrades: { ...prev.upgrades, automation: 1 },
       }));
     }
-  }, [isLoading, state.equippedSlimeIds.length, state.upgrades.automation]);
+  }, [isLoading, state.slimes.length, state.upgrades.automation]);
 
   // Save state
   useEffect(() => {
@@ -691,7 +690,7 @@ export default function App() {
           color: COLORS[Math.floor(Math.random() * COLORS.length)],
           ...rollNewSlimeVisuals(),
           stats: {
-            health: 10 + Math.floor(Math.random() * 10),
+            health: 5 + Math.floor(Math.random() * 5),
             strength: 5 + Math.floor(Math.random() * 5),
             agility: 5 + Math.floor(Math.random() * 5),
           },
@@ -844,7 +843,7 @@ export default function App() {
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     ...rollNewSlimeVisuals(),
     stats: {
-      health: 10 + Math.floor(Math.random() * 10),
+      health: 5 + Math.floor(Math.random() * 5),
       strength: 5 + Math.floor(Math.random() * 5),
       agility: 5 + Math.floor(Math.random() * 5),
     },
@@ -945,7 +944,7 @@ export default function App() {
       color: s1.color,
       ...breedSlimeVisuals(withSlimeVisualDefaults(s1), withSlimeVisualDefaults(s2)),
       stats: {
-        health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 5,
+        health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 2,
         strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
         agility: Math.floor((s1.stats.agility + s2.stats.agility) / 2) + 2,
       },
@@ -1025,7 +1024,7 @@ export default function App() {
           coins += encounter.rewardCoins;
         }
         const arenaWins = won ? (prev.arenaWins ?? 0) + 1 : (prev.arenaWins ?? 0);
-        const ticketsEarned = won && arenaWins % 3 === 0 ? 1 : 0;
+        const ticketsEarned = won ? (encounter.rewardTickets ?? 1) : 0;
         const tickets = (prev.tickets ?? 0) + ticketsEarned;
         if (arenaAbilityUserIds.length > 0) {
           const t = Date.now();
@@ -1140,7 +1139,7 @@ export default function App() {
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
         ...rollNewSlimeVisuals(),
         stats: {
-          health: 10 + Math.floor(Math.random() * 10),
+          health: 5 + Math.floor(Math.random() * 5),
           strength: 5 + Math.floor(Math.random() * 5),
           agility: 5 + Math.floor(Math.random() * 5),
         },
@@ -1237,7 +1236,6 @@ export default function App() {
               <div className="pt-4">
                 <h3 className="text-lg font-black text-gray-800 mb-2 flex items-center gap-2">
                   <MessageCircle className="h-5 w-5 text-orange-500" />
-                  Glim
                 </h3>
                 <p className="text-gray-600 font-medium leading-relaxed mb-6">
                   {onboardingMessages[onboardingStep]}
