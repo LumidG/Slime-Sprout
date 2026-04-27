@@ -545,8 +545,8 @@ export const UPGRADE_COSTS = {
   movementSpeed: (level: number) => Math.floor(10 * Math.pow(1.19, level)),
   slimeMovementSpeed: (level: number) => Math.floor(10 * Math.pow(1.19, level)),
   respawnTime: (level: number) => Math.floor(12 * Math.pow(1.36, level)),
-  /** Cost for the next coin-value tier (current tier = `level`). */
-  coinValue: (level: number) => Math.max(1, Math.floor((level + 1) / 2)),
+  /** Cost for the next coin-value tier (current tier = `level`). Strictly increases every tier. */
+  coinValue: (level: number) => level + 1,
   /** Cost for the next coin cap tier (+2 coins on screen per tier). */
   coinCap: (level: number) => Math.floor(15 * Math.pow(1.4, level)),
   /**
@@ -555,6 +555,15 @@ export const UPGRADE_COSTS = {
    */
   slimeCap: (level: number) => Math.floor(100 * Math.pow(1.5, level)),
 };
+
+/**
+ * Scales a base upgrade cost by 20% per world index beyond world 0.
+ * World 0 → ×1.00, World 1 → ×1.20, World 2 → ×1.44, … (1.2^worldIndex).
+ */
+export function scaleUpgradeCostForWorld(baseCost: number, worldIndex: number): number {
+  if (worldIndex <= 0) return baseCost;
+  return Math.max(1, Math.round(baseCost * Math.pow(1.2, worldIndex)));
+}
 
 /** Caps for shop upgrades on the game tab (automation is 0/1). World 0 (first level) baseline. */
 export const MAX_GAME_UPGRADE_LEVEL = {
@@ -739,6 +748,27 @@ export interface LevelGoal {
 }
 
 /**
+ * Returns the coin threshold for a given goal index scaled for the current world.
+ * Each unlocked world requires 25% more coins than the previous one (1.25^worldIndex).
+ */
+export function getLevelGoalThreshold(goalIndex: number, worldIndex: number): number {
+  const goal = LEVEL_GOALS[goalIndex];
+  if (!goal) return Infinity;
+  return Math.round(goal.threshold * Math.pow(1.25, worldIndex));
+}
+
+/**
+ * Returns a LevelGoal with threshold and label adjusted for the given world index.
+ * Uses the base LEVEL_GOALS thresholds scaled by 1.25^worldIndex.
+ */
+export function getLevelGoal(goalIndex: number, worldIndex: number): LevelGoal | undefined {
+  const goal = LEVEL_GOALS[goalIndex];
+  if (!goal) return undefined;
+  const threshold = getLevelGoalThreshold(goalIndex, worldIndex);
+  return { ...goal, threshold, label: `Collect ${threshold} coins` };
+}
+
+/**
  * Five milestone goals per world. Progress tracks raw coins collected from the field
  * in the current world session (resets when the next world unlocks).
  */
@@ -809,26 +839,6 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
   {
     threshold: 15660,
     label: 'Collect 15660 coins',
-    rewardEggs: 0,
-    rewardCoins: 0,
-    rewardTickets: 3,
-    rewardSlime: true,
-    rewardLabel: '+3 Tickets + ✨ Rare Slime',
-    isFinal: true,
-  },
-] as const;
-  {
-    threshold: 5400,
-    label: 'Collect 5400 coins',
-    rewardEggs: 0,
-    rewardCoins: 0,
-    rewardTickets: 3,
-    rewardSlime: false,
-    rewardLabel: '+3 Tickets 🎟️',
-  },
-  {
-    threshold: 10800,
-    label: 'Collect 10800 coins',
     rewardEggs: 0,
     rewardCoins: 0,
     rewardTickets: 3,

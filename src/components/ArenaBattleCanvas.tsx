@@ -23,6 +23,28 @@ import { drawSlimeSpriteStack, loadSlimeSpriteImageCache } from '../slimeSprites
 
 type SlimePos = { x: number; y: number; moveDist: number; walkPhase: number };
 
+const MAX_CANVAS_DPR = 3;
+
+function syncArenaCanvasToDevicePixels(
+  canvas: HTMLCanvasElement,
+  cssWidth: number,
+  cssHeight: number
+): number {
+  const dpr = Math.min(
+    typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+    MAX_CANVAS_DPR
+  );
+  const bw = Math.max(1, Math.round(cssWidth * dpr));
+  const bh = Math.max(1, Math.round(cssHeight * dpr));
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+  }
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  return dpr;
+}
+
 /** Vertical lineup on the left or right edge of the arena (paired slots face each other across X). */
 function arenaVerticalSideAnchor(
   width: number,
@@ -481,10 +503,7 @@ export function ArenaBattleCanvas({
       if (!entry) return;
       const { width, height } = entry.contentRect;
       dims.current = { width, height };
-      if (canvasRef.current) {
-        canvasRef.current.width = width;
-        canvasRef.current.height = height;
-      }
+      // Physical pixel sizing is handled each frame via syncArenaCanvasToDevicePixels.
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
@@ -517,10 +536,16 @@ export function ArenaBattleCanvas({
   };
 
   useGameLoop((deltaTime) => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
     const { width, height } = dims.current;
     if (width < 20 || height < 20) return;
+
+    const dpr = syncArenaCanvasToDevicePixels(canvas, width, height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     const frameScale = (deltaTime / 16.67) * speedRef.current;
     const timeNow = Date.now();

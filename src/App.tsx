@@ -14,7 +14,6 @@ import {
   Heart,
   Sword,
   Wind,
-  Bug,
   Trash2,
   Sparkles,
   Trophy,
@@ -43,8 +42,11 @@ import { LevelCompletionBar } from './components/LevelCompletionBar';
 import { 
   COLORS, 
   TRAITS, 
-  UPGRADE_COSTS, 
+  UPGRADE_COSTS,
+  scaleUpgradeCostForWorld, 
   LEVEL_GOALS,
+  getLevelGoal,
+  getLevelGoalThreshold,
   EGG_COST,
   EGG_BULK_10_COST,
   eggPurchaseCost, // eslint-disable-line @typescript-eslint/no-unused-vars -- kept for reference
@@ -148,7 +150,6 @@ export default function App() {
   const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const collectionScrollRef = useRef<HTMLDivElement>(null);
   const [collectionScrollFadeBottom, setCollectionScrollFadeBottom] = useState(false);
-  const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [selectedSlimeDetail, setSelectedSlimeDetail] = useState<Slime | null>(null);
   /** ID of a slime waiting to be equipped — set when the team is full and the player needs to choose who to swap out. */
   const [pendingEquipSlimeId, setPendingEquipSlimeId] = useState<string | null>(null);
@@ -283,17 +284,17 @@ export default function App() {
   // Notification Logic
   const canAffordAnyGameUpgrade =
     (!isGameUpgradeMaxed(state.upgrades, 'movementSpeed') &&
-      state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)) ||
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed), state.gameWorldIndex)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'slimeMovementSpeed') &&
-      state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)) ||
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed), state.gameWorldIndex)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'respawnTime') &&
-      state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)) ||
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime), state.gameWorldIndex)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'coinValue') &&
-      state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)) ||
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.coinValue(state.upgrades.coinValue), state.gameWorldIndex)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'coinCap') &&
-      state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)) ||
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.coinCap(state.upgrades.coinCap), state.gameWorldIndex)) ||
     (!isGameUpgradeMaxed(state.upgrades, 'slimeCap') &&
-      state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap));
+      state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap), state.gameWorldIndex));
   
   const hasSlimesNotification = false;
 
@@ -809,7 +810,8 @@ export default function App() {
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
     if (isGameUpgradeMaxed(state.upgrades, key, state.gameWorldIndex)) return;
     const currentLevel = state.upgrades[key];
-    const cost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
+    const baseCost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
+    const cost = scaleUpgradeCostForWorld(baseCost, state.gameWorldIndex);
 
     if (state.coins >= cost) {
       setState(prev => {
@@ -823,16 +825,17 @@ export default function App() {
     setState(prev => {
       if (isGameUpgradeMaxed(prev.upgrades, key, prev.gameWorldIndex)) return prev;
       if (key === 'automation') {
-        if (prev.coins < UPGRADE_COSTS.automation) return prev;
+        const automationCost = scaleUpgradeCostForWorld(UPGRADE_COSTS.automation, prev.gameWorldIndex);
+        if (prev.coins < automationCost) return prev;
         const newUpgrades = { ...prev.upgrades, automation: 1 };
-        return tryUnlockNextWorld({ ...prev, coins: prev.coins - UPGRADE_COSTS.automation }, newUpgrades);
+        return tryUnlockNextWorld({ ...prev, coins: prev.coins - automationCost }, newUpgrades);
       }
       const caps = getMaxGameUpgradeLevelForWorld(prev.gameWorldIndex);
       const cap = caps[key as keyof typeof caps];
       let level = prev.upgrades[key];
       let coins = prev.coins;
       while (level < cap) {
-        const cost = (UPGRADE_COSTS as any)[key](level);
+        const cost = scaleUpgradeCostForWorld((UPGRADE_COSTS as any)[key](level), prev.gameWorldIndex);
         if (coins < cost) break;
         coins -= cost;
         level++;
@@ -1069,77 +1072,6 @@ export default function App() {
   );
 
   // Debug Actions
-  const debugAddCoins = (amount: number) => {
-    setState(prev => ({ ...prev, coins: prev.coins + amount }));
-  };
-
-  const debugAddTickets = (amount: number) => {
-    setState(prev => ({ ...prev, tickets: (prev.tickets ?? 0) + amount }));
-  };
-
-  const debugAddEggs = (amount: number) => {
-    setState(prev => ({ ...prev, eggs: prev.eggs + amount }));
-  };
-
-  const debugReset = () => {
-    if (confirm('Reset all progress?')) {
-      setState(INITIAL_STATE);
-      localStorage.removeItem('slime_sprout_state');
-      window.location.reload();
-    }
-  };
-
-  const debugUnlockAll = () => {
-    setState(prev => {
-      const caps = getMaxGameUpgradeLevelForWorld(prev.gameWorldIndex);
-      return {
-        ...prev,
-        upgrades: {
-          automation: 1,
-          movementSpeed: caps.movementSpeed,
-          slimeMovementSpeed: caps.slimeMovementSpeed,
-          respawnTime: caps.respawnTime,
-          coinValue: caps.coinValue,
-          coinCap: caps.coinCap,
-          slimeCap: caps.slimeCap,
-        },
-      };
-    });
-  };
-
-  const debugCompleteCurrentGoal = () => {
-    setState((prev) => {
-      const activeGoalIndex = (prev.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).findIndex((claimed) => !claimed);
-      if (activeGoalIndex === -1) return prev;
-      const goal = LEVEL_GOALS[activeGoalIndex];
-      if (!goal) return prev;
-      const needed = goal.threshold;
-      if ((prev.worldCoinsCollected ?? 0) >= needed) return prev;
-      return { ...prev, worldCoinsCollected: needed };
-    });
-  };
-
-  /** Same outcome as claiming the final goal: unlock next world, go there, reset upgrades. */
-  const debugCompleteLevel = () => {
-    setState((prev) => {
-      if (prev.maxUnlockedGameWorld >= 5) return prev;
-      const nextIndex = prev.maxUnlockedGameWorld + 1;
-      queueMicrotask(() =>
-        setWorldUnlockCelebration({
-          worldIndex: nextIndex,
-          worldName: GAME_WORLDS[nextIndex].name,
-        })
-      );
-      return {
-        ...prev,
-        coins: 0,
-        maxUnlockedGameWorld: nextIndex,
-        gameWorldIndex: nextIndex,
-        upgrades: { ...INITIAL_STATE.upgrades },
-      };
-    });
-  };
-
   const goGameWorld = (delta: 1 | -1) => {
     const next = state.gameWorldIndex + delta;
     if (next < 0 || next > state.maxUnlockedGameWorld) return;
@@ -1155,31 +1087,6 @@ export default function App() {
     setWorldNavShiftPx(0);
   }, [state.gameWorldIndex, worldNavShiftPx]);
 
-  const debugAddSlime = () => {
-    setState(prev => {
-      const newSlime: Slime = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: getUniqueName(prev.slimes),
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        ...rollNewSlimeVisuals(),
-        stats: {
-          health: 5 + Math.floor(Math.random() * 5),
-          strength: 5 + Math.floor(Math.random() * 5),
-          agility: 5 + Math.floor(Math.random() * 5),
-        },
-        statLevels: { health: 1, strength: 1, agility: 1 },
-        trait: TRAITS[Math.floor(Math.random() * TRAITS.length)] as SlimeTrait,
-        arenaAbility: rollRandomArenaAbility(),
-        level: 1,
-        value: 50,
-        hatchedAt: Date.now()
-      };
-      return {
-        ...prev,
-        slimes: [...prev.slimes, newSlime]
-      };
-    });
-  };
 
   if (isLoading && loadingProgress < 100) {
     return (
@@ -1231,28 +1138,15 @@ export default function App() {
 
   return (
     <>
-      {/* Header Stats — overlays full-screen game; normal flow on other tabs */}
-      <div
+      {/* Header Stats — overlays full-screen game; normal flow on other tabs; hidden during arena battle */}
+      {!shellOverArenaFight && <div
         className={
           isGameTab
             ? `glass-header-game pointer-events-none absolute top-0 right-0 left-0 ${isUpgradesOpen ? 'z-[55]' : 'z-30'} grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3`
-            : shellOverArenaFight
-              ? 'glass-header-page relative z-[125] grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
-              : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
+            : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
         }
       >
-        <button
-          type="button"
-          onClick={() => setIsDebugOpen(true)}
-          className={
-            isGameTab
-              ? 'ui-emerald-outline-soft pointer-events-auto justify-self-start rounded-xl bg-white/25 p-2 text-emerald-900/45 backdrop-blur-sm transition-colors hover:text-orange-600'
-              : 'pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600'
-          }
-          aria-label="Debug menu"
-        >
-          <Bug className="h-4 w-4" />
-        </button>
+        <div />
         <div className="flex items-center justify-center gap-5">
           <div className="flex items-center gap-2">
             <div
@@ -1287,7 +1181,7 @@ export default function App() {
         >
           <MoreVertical className="h-5 w-5" />
         </button>
-      </div>
+      </div>}
 
       {/* Options — centered modal */}
       <AnimatePresence>
@@ -1792,109 +1686,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Debug Menu Overlay */}
-      <AnimatePresence>
-        {isDebugOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="relative w-full max-w-xs overflow-hidden rounded-3xl border border-emerald-100/90 bg-gradient-to-b from-white to-orange-50/40 p-6 pt-7 shadow-2xl shadow-emerald-900/15 ring-1 ring-orange-100/70"
-            >
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-orange-400" />
-              <div className="mb-6 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-xl font-black text-gray-800">
-                  <Bug className="text-orange-500" /> Debug Menu
-                </h2>
-                <button onClick={() => setIsDebugOpen(false)} className="rounded-lg border border-gray-200 bg-gray-50/60 p-1 text-gray-400 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-500">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-emerald-100/80 bg-emerald-50/50 p-3">
-                  <p className="mb-2 text-[10px] font-black text-emerald-600/80 uppercase">Currency</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => debugAddCoins(1000)} className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 py-2 text-xs font-bold text-orange-800">+1k 💰</button>
-                    <button onClick={() => debugAddCoins(20000)} className="rounded-xl bg-gradient-to-br from-amber-200 to-orange-200 py-2 text-xs font-bold text-orange-900">+20k 💰</button>
-                    <button onClick={() => debugAddTickets(5)} className="rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 py-2 text-xs font-bold text-purple-800">+5 🎟️</button>
-                    <button onClick={() => debugAddTickets(20)} className="rounded-xl bg-gradient-to-br from-violet-200 to-purple-200 py-2 text-xs font-bold text-purple-900">+20 🎟️</button>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-orange-100/80 bg-orange-50/40 p-3">
-                  <p className="mb-2 text-[10px] font-black text-orange-700/90 uppercase">Items</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => debugAddEggs(1)} className="rounded-xl bg-emerald-100 py-2 text-xs font-bold text-emerald-800">+1 Egg 🥚</button>
-                    <button onClick={() => debugAddEggs(10)} className="rounded-xl bg-teal-100 py-2 text-xs font-bold text-teal-800">+10 Eggs 🥚</button>
-                    <button 
-                      onClick={debugAddSlime} 
-                      className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-200 to-lime-100 py-2.5 text-sm font-bold text-emerald-900"
-                    >
-                      <Sparkles className="h-4 w-4 shrink-0" /> Add Random Slime
-                    </button>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={debugUnlockAll}
-                  className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-100 py-3 text-base font-bold text-emerald-800"
-                >
-                  <Zap className="h-5 w-5 shrink-0" /> Max Upgrades
-                </button>
-
-                <button
-                  type="button"
-                  onClick={debugCompleteCurrentGoal}
-                  disabled={(state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).every(Boolean)}
-                  title={
-                    (state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).every(Boolean)
-                      ? 'All goals already completed'
-                      : 'Set coin progress to reach the current goal threshold'
-                  }
-                  className="ui-afford-disabled flex w-full items-center justify-center gap-2.5 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 to-emerald-50 py-3 text-base font-bold text-teal-900 disabled:border-zinc-200 disabled:from-zinc-100 disabled:to-zinc-100 disabled:text-zinc-500"
-                >
-                  <Gift className="h-5 w-5 shrink-0" /> Complete Current Goal
-                </button>
-
-                <button
-                  type="button"
-                  onClick={debugCompleteLevel}
-                  disabled={state.maxUnlockedGameWorld >= 5}
-                  title={
-                    state.maxUnlockedGameWorld >= 5
-                      ? 'All worlds already unlocked'
-                      : 'Unlock the next area and reset shop upgrades (normal level completion)'
-                  }
-                  className="ui-afford-disabled flex w-full items-center justify-center gap-2.5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 py-3 text-base font-bold text-amber-900 disabled:border-zinc-200 disabled:from-zinc-100 disabled:to-zinc-100 disabled:text-zinc-500"
-                >
-                  <Trophy className="h-5 w-5 shrink-0" /> Complete level
-                </button>
-
-                <button 
-                  onClick={debugReset}
-                  className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 py-3 text-base font-bold text-red-700"
-                >
-                  <Trash2 className="h-5 w-5 shrink-0" /> Reset Game
-                </button>
-              </div>
-
-              <button 
-                onClick={() => setIsDebugOpen(false)}
-                className="mt-6 w-full rounded-2xl bg-gradient-to-r from-emerald-700 to-teal-800 py-4 text-base font-bold text-white shadow-lg shadow-emerald-900/20"
-              >
-                Close
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Slime Detail Popup */}
       <AnimatePresence>
         {selectedSlimeDetail && (
@@ -2202,6 +1993,7 @@ export default function App() {
                       worldCoinsCollected={state.worldCoinsCollected ?? 0}
                       goalsClaimed={state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]}
                       onClaim={handleClaimGoal}
+                      worldIndex={state.maxUnlockedGameWorld}
                       allUpgradesMaxed={areAllGameUpgradesMaxed(state.upgrades, state.gameWorldIndex)}
                       upgradesProgress={getGameUpgradesMaxedProgress(state.upgrades, state.gameWorldIndex)}
                     />
@@ -2673,8 +2465,8 @@ export default function App() {
                         ? 'MAX'
                         : `${Math.round((gamePlayerBaseSpeedAtLevel(state.upgrades.movementSpeed + 1) / BASE_MOVEMENT_SPEED) * 100)}% speed`
                     }
-                    cost={UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.movementSpeed(state.upgrades.movementSpeed), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('movementSpeed')}
                     onPurchaseMax={() => buyUpgradeMax('movementSpeed')}
                     maxed={isMaxed('movementSpeed')}
@@ -2691,8 +2483,8 @@ export default function App() {
                         ? 'MAX'
                         : `${Math.round((gameSlimeBaseSpeedAtLevel(state.upgrades.slimeMovementSpeed + 1) / BASE_SLIME_SPEED) * 100)}% speed`
                     }
-                    cost={UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeMovementSpeed(state.upgrades.slimeMovementSpeed), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('slimeMovementSpeed')}
                     onPurchaseMax={() => buyUpgradeMax('slimeMovementSpeed')}
                     maxed={isMaxed('slimeMovementSpeed')}
@@ -2709,8 +2501,8 @@ export default function App() {
                         ? 'MAX'
                         : `${(gameRespawnIntervalMs(state.upgrades.respawnTime + 1) / 1000).toFixed(1)}s`
                     }
-                    cost={UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.respawnTime(state.upgrades.respawnTime), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('respawnTime')}
                     onPurchaseMax={() => buyUpgradeMax('respawnTime')}
                     maxed={isMaxed('respawnTime')}
@@ -2726,8 +2518,8 @@ export default function App() {
                         ? 'MAX'
                         : `${onScreenCoinCap(state.upgrades.coinCap + 1)} coins`
                     }
-                    cost={UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.coinCap(state.upgrades.coinCap)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.coinCap(state.upgrades.coinCap), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.coinCap(state.upgrades.coinCap), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('coinCap')}
                     onPurchaseMax={() => buyUpgradeMax('coinCap')}
                     maxed={isMaxed('coinCap')}
@@ -2743,8 +2535,8 @@ export default function App() {
                         ? 'MAX'
                         : `${gameCoinValuePerCollect(state.upgrades.coinValue + 1)} base 💰`
                     }
-                    cost={UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.coinValue(state.upgrades.coinValue)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.coinValue(state.upgrades.coinValue), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.coinValue(state.upgrades.coinValue), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('coinValue')}
                     onPurchaseMax={() => buyUpgradeMax('coinValue')}
                     maxed={isMaxed('coinValue')}
@@ -2762,8 +2554,8 @@ export default function App() {
                         ? 'MAX'
                         : `${equippedSlimeCapAtLevel(state.upgrades.slimeCap + 1)} slimes`
                     }
-                    cost={UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
-                    canAfford={!isCompletedLevel && state.coins >= UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap)}
+                    cost={scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap), state.gameWorldIndex)}
+                    canAfford={!isCompletedLevel && state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap), state.gameWorldIndex)}
                     onPurchase={() => buyUpgrade('slimeCap')}
                     onPurchaseMax={() => buyUpgradeMax('slimeCap')}
                     maxed={isMaxed('slimeCap')}

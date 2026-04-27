@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gift, Check } from 'lucide-react';
-import { LEVEL_GOALS } from '../constants';
+import { LEVEL_GOALS, getLevelGoal, getLevelGoalThreshold } from '../constants';
 
 interface Particle {
   id: number;
@@ -15,6 +15,7 @@ interface LevelCompletionBarProps {
   worldCoinsCollected: number;
   goalsClaimed: [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
   onClaim: (goalIndex: number) => void;
+  worldIndex?: number;
 }
 
 const PARTICLE_COLORS_NORMAL = ['#6ee7b7', '#34d399', '#fbbf24', '#ffffff', '#86efac'];
@@ -22,7 +23,7 @@ const PARTICLE_COLORS_FINAL = ['#fbbf24', '#f59e0b', '#ec4899', '#8b5cf6', '#636
 const PARTICLE_COUNT_NORMAL = 14;
 const PARTICLE_COUNT_FINAL = 22;
 
-export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim }: LevelCompletionBarProps) {
+export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim, worldIndex = 0 }: LevelCompletionBarProps) {
   const [particles, setParticles] = useState<Particle[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
   const particleIdRef = useRef(0);
@@ -30,8 +31,8 @@ export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim 
   const activeGoalIndex = goalsClaimed.findIndex((claimed) => !claimed);
   const allDone = activeGoalIndex === -1;
 
-  const activeGoal = allDone ? null : LEVEL_GOALS[activeGoalIndex];
-  const prevThreshold = (!allDone && activeGoalIndex > 0) ? LEVEL_GOALS[activeGoalIndex - 1].threshold : 0;
+  const activeGoal = allDone ? null : getLevelGoal(activeGoalIndex, worldIndex);
+  const prevThreshold = (!allDone && activeGoalIndex > 0) ? getLevelGoalThreshold(activeGoalIndex - 1, worldIndex) : 0;
   const rangeSize = activeGoal ? activeGoal.threshold - prevThreshold : 1;
 
   // Progress within the current goal's range (coin-based for all goals).
@@ -49,8 +50,8 @@ export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim 
 
   const handleClaim = useCallback(() => {
     if (!isReady || isClaiming || activeGoalIndex === -1) return;
-    const goal = LEVEL_GOALS[activeGoalIndex];
-    const isFinal = goal.isFinal ?? false;
+    const goal = getLevelGoal(activeGoalIndex, worldIndex);
+    const isFinal = goal?.isFinal ?? false;
 
     setIsClaiming(true);
 
