@@ -1071,7 +1071,6 @@ export default function App() {
     []
   );
 
-  // Debug Actions
   const goGameWorld = (delta: 1 | -1) => {
     const next = state.gameWorldIndex + delta;
     if (next < 0 || next > state.maxUnlockedGameWorld) return;
@@ -1086,7 +1085,6 @@ export default function App() {
     setWorldNavTransition(true);
     setWorldNavShiftPx(0);
   }, [state.gameWorldIndex, worldNavShiftPx]);
-
 
   if (isLoading && loadingProgress < 100) {
     return (

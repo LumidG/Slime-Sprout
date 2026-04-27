@@ -1,23 +1,20 @@
 /**
- * DEBUG MENU — disabled/removed from App.tsx on 2026-04-27.
- * To restore, re-integrate each section back into App.tsx as described below.
+ * DEBUG MENU — stored here for easy restoration.
  *
- * ─── 1. IMPORT ───────────────────────────────────────────────────────────────
- * Add `Bug` back to the lucide-react import in App.tsx (around line 17):
- *   Bug,
- *
- * ─── 2. STATE (inside the App component) ─────────────────────────────────────
- * Add after the collectionScrollFadeBottom state:
+ * To bring this back into App.tsx:
+ *  1. Add `Bug` to the lucide-react import.
+ *  2. Add the `isDebugOpen` state (see STATE below).
+ *  3. Paste the FUNCTIONS block back (after the arena callback, before `goGameWorld`).
+ *  4. Replace the `<div />` spacer in the header left-slot with the HEADER BUTTON block.
+ *  5. Paste the OVERLAY block back just before the {/* Slime Detail Popup */} comment.
  */
 
+// ─── STATE ───────────────────────────────────────────────────────────────────
 // const [isDebugOpen, setIsDebugOpen] = useState(false);
 
-/**
- * ─── 3. CALLBACK FUNCTIONS (inside the App component) ────────────────────────
- * Add these before the `goGameWorld` function:
- */
-
+// ─── FUNCTIONS ───────────────────────────────────────────────────────────────
 /*
+  // Debug Actions
   const debugAddCoins = (amount: number) => {
     setState(prev => ({ ...prev, coins: prev.coins + amount }));
   };
@@ -116,30 +113,25 @@
   };
 */
 
-/**
- * ─── 4. HEADER BUTTON (in JSX, inside the header <div> grid) ─────────────────
- * Replace the placeholder <div /> that sits at justify-self-start in the header grid
- * with this button:
- *
- * <button
- *   type="button"
- *   onClick={() => setIsDebugOpen(true)}
- *   className={
- *     isGameTab
- *       ? 'ui-emerald-outline-soft pointer-events-auto justify-self-start rounded-xl bg-white/25 p-2 text-emerald-900/45 backdrop-blur-sm transition-colors hover:text-orange-600'
- *       : 'pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600'
- *   }
- *   aria-label="Debug menu"
- * >
- *   <Bug className="h-4 w-4" />
- * </button>
- *
- * ─── 5. OVERLAY JSX (after the world-unlock celebration AnimatePresence block) ─
- * Add this block:
- */
-
+// ─── HEADER BUTTON (replaces the <div /> spacer in the left grid slot) ───────
 /*
-      {/* Debug Menu Overlay *\/}
+        <button
+          type="button"
+          onClick={() => setIsDebugOpen(true)}
+          className={
+            isGameTab
+              ? 'ui-emerald-outline-soft pointer-events-auto justify-self-start rounded-xl bg-white/25 p-2 text-emerald-900/45 backdrop-blur-sm transition-colors hover:text-orange-600'
+              : 'pointer-events-auto justify-self-start p-2 text-emerald-900/45 transition-colors hover:text-orange-600'
+          }
+          aria-label="Debug menu"
+        >
+          <Bug className="h-4 w-4" />
+        </button>
+*/
+
+// ─── OVERLAY (goes just before {/* Slime Detail Popup */}) ───────────────────
+/*
+      {/* Debug Menu Overlay */}
       <AnimatePresence>
         {isDebugOpen && (
           <motion.div 

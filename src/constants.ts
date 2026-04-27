@@ -104,7 +104,10 @@ export function gameRespawnNextIntervalReductionMs(currentLevel: number, maxLeve
 }
 
 /** Max simulated offline time when applying automation idle gains (matches load/save logic). */
-export const OFFLINE_IDLE_CAP_MS = 12 * 60 * 60 * 1000;
+export const OFFLINE_IDLE_CAP_MS = 1 * 60 * 60 * 1000;
+
+/** Fraction of the normal automation rate applied to idle/offline gains. */
+export const OFFLINE_IDLE_RATE = 0.5;
 
 /**
  * Idle coins from automation while the app was closed or in background (respawn-rate based).
@@ -120,7 +123,7 @@ export function computeOfflineIdleGain(
   const capped = Math.min(elapsedMs, OFFLINE_IDLE_CAP_MS);
   const respawnInterval = gameRespawnIntervalMs(upgrades.respawnTime);
   const coinsPerSecond = 1 / (respawnInterval / 1000);
-  const idleCoins = Math.floor((capped / 1000) * coinsPerSecond);
+  const idleCoins = Math.floor((capped / 1000) * coinsPerSecond * OFFLINE_IDLE_RATE);
   const currencyEarned = idleCoins * gameCoinValuePerCollect(upgrades.coinValue);
   return { idleCoins, currencyEarned };
 }
