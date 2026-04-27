@@ -172,9 +172,9 @@ export const TRAIT_EFFECTS: Record<SlimeTrait, {
 };
 
 /** Base equipped-slime slots before any Slime Cap upgrades. */
-export const MAX_EQUIPPED_SLIMES = 3;
+export const MAX_EQUIPPED_SLIMES = 1;
 
-/** Equipped-slime slot count at a given Slime Cap upgrade level. Level 0 = 3, each level +1, max 20. */
+/** Equipped-slime slot count at a given Slime Cap upgrade level. Level 0 = 1, each level +1, max 12. */
 export function equippedSlimeCapAtLevel(slimeCapLevel: number): number {
   return MAX_EQUIPPED_SLIMES + Math.max(0, Math.floor(slimeCapLevel));
 }
@@ -553,7 +553,7 @@ export const UPGRADE_COSTS = {
   /** Cost for the next coin cap tier (+2 coins on screen per tier). */
   coinCap: (level: number) => Math.floor(15 * Math.pow(1.4, level)),
   /**
-   * Slime Cap: +1 equip slot per tier (base 3 → up to 20), 17 tiers total.
+   * Slime Cap: +1 equip slot per tier (base 1 → up to 12), 11 tiers total.
    * Intentionally the most expensive upgrade — roughly doubles each tier.
    */
   slimeCap: (level: number) => Math.floor(100 * Math.pow(1.5, level)),
@@ -593,8 +593,8 @@ export const MAX_GAME_UPGRADE_LEVEL = {
   respawnTime: 10,
   coinValue: 20,
   coinCap: 10,
-  /** 17 tiers: base 3 slots + 17 = 20 max equipped slimes. */
-  slimeCap: 17,
+  /** 11 tiers: base 1 slot + 11 = 12 max equipped slimes (reached in world 5). */
+  slimeCap: 11,
 } as const;
 
 export type GameUpgradeLevelCaps = {
@@ -610,14 +610,16 @@ export type GameUpgradeLevelCaps = {
  * Per-world upgrade caps. Index matches `gameWorldIndex` (0–5).
  * Each world's caps are reached to unlock the next world.
  * Coin respawn and coin cap both max at 10 tiers so they progress together.
+ * Slime Cap tiers are cumulative: world 0 allows 1 tier (2 slots), world 1 allows 3 tiers (4 slots),
+ * world 2 → 5 tiers (6 slots), world 3 → 7 tiers (8 slots), world 4 → 9 tiers (10 slots), world 5 → 11 tiers (12 slots).
  */
 export const MAX_GAME_UPGRADE_LEVEL_BY_WORLD: readonly GameUpgradeLevelCaps[] = [
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 10, coinValue: 20, coinCap: 10, slimeCap: 2 },
-  { movementSpeed: 25, slimeMovementSpeed: 25, respawnTime: 10, coinValue: 25, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 30, slimeMovementSpeed: 30, respawnTime: 10, coinValue: 30, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 10, coinValue: 35, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 40, slimeMovementSpeed: 40, respawnTime: 10, coinValue: 40, coinCap: 10, slimeCap: 17 },
-  { movementSpeed: 45, slimeMovementSpeed: 45, respawnTime: 10, coinValue: 45, coinCap: 10, slimeCap: 17 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 10, coinValue: 20, coinCap: 10, slimeCap: 1 },
+  { movementSpeed: 25, slimeMovementSpeed: 25, respawnTime: 10, coinValue: 25, coinCap: 10, slimeCap: 3 },
+  { movementSpeed: 30, slimeMovementSpeed: 30, respawnTime: 10, coinValue: 30, coinCap: 10, slimeCap: 5 },
+  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 10, coinValue: 35, coinCap: 10, slimeCap: 7 },
+  { movementSpeed: 40, slimeMovementSpeed: 40, respawnTime: 10, coinValue: 40, coinCap: 10, slimeCap: 9 },
+  { movementSpeed: 45, slimeMovementSpeed: 45, respawnTime: 10, coinValue: 45, coinCap: 10, slimeCap: 11 },
 ];
 
 /** Returns the upgrade caps for a given world index (falls back to world-0 caps if out of range). */

@@ -8,7 +8,6 @@ import {
   Package, 
   ChevronRight,
   ChevronLeft,
-  Zap,
   Timer,
   Coins,
   Heart,
@@ -729,7 +728,7 @@ export default function App() {
       const newGoalsClaimed = [...prev.worldGoalsClaimed] as [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
       newGoalsClaimed[goalIndex] = true;
 
-      return {
+      const updatedState: GameState = {
         ...prev,
         eggs: prev.eggs + (goal.rewardEggs ?? 0),
         coins: prev.coins + (goal.rewardCoins ?? 0),
@@ -738,6 +737,32 @@ export default function App() {
         newlyHatchedSlime: newlyHatched,
         worldGoalsClaimed: newGoalsClaimed,
       };
+
+      // If this was the last goal AND all upgrades are already maxed, unlock the next world.
+      if (
+        updatedState.maxUnlockedGameWorld < GAME_WORLDS.length - 1 &&
+        areAllGameUpgradesMaxed(updatedState.upgrades, updatedState.gameWorldIndex) &&
+        newGoalsClaimed.every(Boolean)
+      ) {
+        const nextIndex = updatedState.maxUnlockedGameWorld + 1;
+        queueMicrotask(() =>
+          setWorldUnlockCelebration({
+            worldIndex: nextIndex,
+            worldName: GAME_WORLDS[nextIndex].name,
+          })
+        );
+        return {
+          ...updatedState,
+          upgrades: { ...INITIAL_STATE.upgrades },
+          coins: 0,
+          maxUnlockedGameWorld: nextIndex,
+          gameWorldIndex: nextIndex,
+          worldCoinsCollected: 0,
+          worldGoalsClaimed: [false, false, false, false, false, false, false, false],
+        };
+      }
+
+      return updatedState;
     });
   }, [playCoinCollect]);
 
@@ -787,6 +812,7 @@ export default function App() {
   const tryUnlockNextWorld = (prev: GameState, newUpgrades: GameState['upgrades']): GameState => {
     if (prev.maxUnlockedGameWorld >= GAME_WORLDS.length - 1) return { ...prev, upgrades: newUpgrades };
     if (!areAllGameUpgradesMaxed(newUpgrades, prev.gameWorldIndex)) return { ...prev, upgrades: newUpgrades };
+    if (!(prev.worldGoalsClaimed ?? []).every(Boolean)) return { ...prev, upgrades: newUpgrades };
     const nextIndex = prev.maxUnlockedGameWorld + 1;
     queueMicrotask(() =>
       setWorldUnlockCelebration({
@@ -1083,6 +1109,7 @@ export default function App() {
     setWorldNavTransition(true);
     setWorldNavShiftPx(0);
   }, [state.gameWorldIndex, worldNavShiftPx]);
+
 
   if (isLoading && loadingProgress < 100) {
     return (
@@ -1682,6 +1709,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
+
       {/* Slime Detail Popup */}
       <AnimatePresence>
         {selectedSlimeDetail && (
@@ -2031,13 +2059,13 @@ export default function App() {
                             transition={{ duration: 0.18 }}
                             className="pointer-events-none absolute right-14 top-1/2 z-[39] -translate-y-1/2 max-w-[160px] rounded-xl border border-gray-400/40 bg-gray-800/80 px-2.5 py-1.5 text-center text-[10px] font-bold leading-tight tracking-wide text-gray-100 shadow-lg backdrop-blur-sm"
                           >
-                            Max all upgrades to unlock the next area
+                            Max all upgrades & complete all goals to unlock the next area
                           </motion.div>
                         )}
                       </AnimatePresence>
                       <button
                         type="button"
-                        aria-label="Next area locked. Max all game upgrades in this world to unlock."
+                        aria-label="Next area locked. Max all game upgrades and complete all goals in this world to unlock."
                         onClick={() => {
                           if (lockedHintTimerRef.current) clearTimeout(lockedHintTimerRef.current);
                           setShowLockedNextWorldHint(true);
@@ -2565,10 +2593,10 @@ export default function App() {
                         <div className="mt-0.5 rounded-xl border border-amber-200/70 bg-gradient-to-br from-amber-50/90 to-orange-50/80 px-3 py-2.5">
                           <p className="flex items-center gap-1.5 text-[11px] font-bold text-amber-700">
                             <Lock className="h-3.5 w-3.5 shrink-0 text-amber-500" strokeWidth={2.5} />
-                            Max all upgrades to unlock the next area
+                            Max all upgrades & complete all goals to unlock the next area
                           </p>
                           <p className="mt-0.5 text-[10px] leading-snug text-amber-600/80">
-                            Once every upgrade reaches its cap for this world, you'll be able to move on.
+                            Once every upgrade reaches its cap and all level goals are claimed, you'll be able to move on.
                           </p>
                         </div>
                       )}

@@ -63,7 +63,7 @@ export interface GameState {
     respawnTime: number;
     coinValue: number;
     coinCap: number;
-    /** Slime Cap tier (0–17): each tier adds +1 equip slot above the base 3. */
+    /** Slime Cap tier (0–11): each tier adds +1 equip slot above the base 1. */
     slimeCap: number;
   };
 
