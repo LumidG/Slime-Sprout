@@ -71,7 +71,7 @@ function enemyAsSlime(e: ArenaEnemyDisplay): Slime {
     slimeBody: e.slimeBody,
     slimeEyes: e.slimeEyes,
     slimeAccessory: e.slimeAccessory,
-    stats: { health: 6, strength: 12, agility: e.agility },
+    stats: { health: 3, strength: 12, agility: e.agility },
     statLevels: { health: 1, strength: 1, agility: 1 },
     trait: 'None',
     arenaAbility: e.ability,

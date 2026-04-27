@@ -14,7 +14,6 @@ import {
   Heart,
   Sword,
   Wind,
-  Trash2,
   Sparkles,
   Trophy,
   PartyPopper,
@@ -32,7 +31,6 @@ import {
   Lock,
   Ticket,
   CheckCircle2,
-  Gift,
   ArrowRight,
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
@@ -971,9 +969,9 @@ export default function App() {
       color: s1.color,
       ...breedSlimeVisuals(withSlimeVisualDefaults(s1), withSlimeVisualDefaults(s2)),
       stats: {
-        health: Math.floor((s1.stats.health + s2.stats.health) / 2) + 2,
-        strength: Math.floor((s1.stats.strength + s2.stats.strength) / 2) + 2,
-        agility: Math.floor((s1.stats.agility + s2.stats.agility) / 2) + 2,
+        health: (5 + Math.floor(Math.random() * 5)) + Math.floor((s1.stats.health + s2.stats.health) / 2 * (0.10 + Math.random() * 0.10)),
+        strength: (5 + Math.floor(Math.random() * 5)) + Math.floor((s1.stats.strength + s2.stats.strength) / 2 * (0.10 + Math.random() * 0.10)),
+        agility: (5 + Math.floor(Math.random() * 5)) + Math.floor((s1.stats.agility + s2.stats.agility) / 2 * (0.10 + Math.random() * 0.10)),
       },
       statLevels: { health: 1, strength: 1, agility: 1 },
       trait: Math.random() > 0.5 ? s1.trait : s2.trait,
@@ -1144,7 +1142,7 @@ export default function App() {
             : 'glass-header-page relative z-10 grid grid-cols-[minmax(2.5rem,1fr)_auto_minmax(2.5rem,1fr)] items-center px-2 pt-header-safe pb-3'
         }
       >
-        <div />
+        <div className="justify-self-start" />
         <div className="flex items-center justify-center gap-5">
           <div className="flex items-center gap-2">
             <div
@@ -2144,7 +2142,10 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-3 pb-8">
-                  {state.slimes.map((slime: Slime) => (
+                  {[...state.slimes].sort((a, b) =>
+                    (b.stats.health + b.stats.strength + b.stats.agility) -
+                    (a.stats.health + a.stats.strength + a.stats.agility)
+                  ).map((slime: Slime) => (
                     <SlimeCard 
                       key={slime.id} 
                       slime={slime} 

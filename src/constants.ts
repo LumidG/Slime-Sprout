@@ -204,7 +204,7 @@ export const ARENA_MELEE_MIN_SEPARATION_PX = 28;
 export const ARENA_MELEE_MIN_ATTACK_DIST_PX = 26;
 export const ARENA_MELEE_MAX_ATTACK_DIST_PX = 50;
 /** Decorative HP removed per single strike; win/loss is still stat-based elsewhere. */
-export const ARENA_MELEE_HIT_DAMAGE = 0.048;
+export const ARENA_MELEE_HIT_DAMAGE = 0.096;
 /**
  * Minimum time from the start of one pair strike to the start of the next (player ↔ enemy).
  * Keeps swings readable; should be ≥ attack anim + {@link ARENA_MELEE_POST_SWING_MS}.
@@ -560,12 +560,30 @@ export const UPGRADE_COSTS = {
 };
 
 /**
- * Scales a base upgrade cost by 20% per world index beyond world 0.
- * World 0 → ×1.00, World 1 → ×1.20, World 2 → ×1.44, … (1.2^worldIndex).
+ * Per-world progression multiplier applied to both level-goal coin thresholds and
+ * upgrade costs. Index matches `gameWorldIndex` (0–5).
+ *
+ * Each entry represents how much harder (slower) that world is relative to the
+ * base LEVEL_GOALS values — e.g. 1.35 = 35% slower, 2.20 = 120% slower.
+ */
+export const WORLD_PROGRESSION_MULTIPLIERS: readonly number[] = [
+  1.35, // World 0 — 35% slower
+  1.80, // World 1 — 80% slower
+  1.90, // World 2 — 90% slower
+  2.00, // World 3 — 100% slower
+  2.10, // World 4 — 110% slower
+  2.20, // World 5 — 120% slower
+];
+
+/**
+ * Scales a base upgrade cost by the per-world {@link WORLD_PROGRESSION_MULTIPLIERS}.
+ * World 0 → ×1.35, World 1 → ×1.80, … World 5 → ×2.20.
  */
 export function scaleUpgradeCostForWorld(baseCost: number, worldIndex: number): number {
-  if (worldIndex <= 0) return baseCost;
-  return Math.max(1, Math.round(baseCost * Math.pow(1.2, worldIndex)));
+  const multiplier =
+    WORLD_PROGRESSION_MULTIPLIERS[worldIndex] ??
+    WORLD_PROGRESSION_MULTIPLIERS[WORLD_PROGRESSION_MULTIPLIERS.length - 1]!;
+  return Math.max(1, Math.round(baseCost * multiplier));
 }
 
 /** Caps for shop upgrades on the game tab (automation is 0/1). World 0 (first level) baseline. */
@@ -676,8 +694,8 @@ export const GAME_WORLDS: readonly GameWorldTheme[] = [
   },
   {
     name: 'Scorching Dunes',
-    gradient: ['#fdba74', '#f97316', '#fde68a'],
-    accentStroke: '#ea580c',
+    gradient: ['#e8ba89', '#d5793a', '#ebdb9c'],
+    accentStroke: '#c56431',
     decoration: 'sand',
   },
   {
@@ -751,18 +769,21 @@ export interface LevelGoal {
 }
 
 /**
- * Returns the coin threshold for a given goal index scaled for the current world.
- * Each unlocked world requires 25% more coins than the previous one (1.25^worldIndex).
+ * Returns the coin threshold for a given goal index scaled for the current world
+ * using the per-world {@link WORLD_PROGRESSION_MULTIPLIERS}.
  */
 export function getLevelGoalThreshold(goalIndex: number, worldIndex: number): number {
   const goal = LEVEL_GOALS[goalIndex];
   if (!goal) return Infinity;
-  return Math.round(goal.threshold * Math.pow(1.25, worldIndex));
+  const multiplier =
+    WORLD_PROGRESSION_MULTIPLIERS[worldIndex] ??
+    WORLD_PROGRESSION_MULTIPLIERS[WORLD_PROGRESSION_MULTIPLIERS.length - 1]!;
+  return Math.round(goal.threshold * multiplier);
 }
 
 /**
  * Returns a LevelGoal with threshold and label adjusted for the given world index.
- * Uses the base LEVEL_GOALS thresholds scaled by 1.25^worldIndex.
+ * Uses the base LEVEL_GOALS thresholds scaled by {@link WORLD_PROGRESSION_MULTIPLIERS}.
  */
 export function getLevelGoal(goalIndex: number, worldIndex: number): LevelGoal | undefined {
   const goal = LEVEL_GOALS[goalIndex];
