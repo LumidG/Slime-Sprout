@@ -294,7 +294,10 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'slimeCap') &&
       state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap), state.gameWorldIndex));
   
-  const hasSlimesNotification = (state.tickets ?? 0) >= SLIME_COST_TICKETS;
+  const slotCap = equippedSlimeCapAtLevel(state.upgrades.slimeCap);
+  const hasEmptyEquipSlots = (state.equippedSlimeIdsByWorld[state.gameWorldIndex] ?? []).length < slotCap;
+  const hasUnequippedSlimes = state.slimes.some(s => !(state.equippedSlimeIdsByWorld[state.gameWorldIndex] ?? []).includes(s.id));
+  const hasSlimesNotification = (state.tickets ?? 0) >= SLIME_COST_TICKETS || (hasEmptyEquipSlots && hasUnequippedSlimes);
 
   const isGameTab = state.activeTab === 'game';
   /** True when the player is viewing a world they've already beaten (index < max unlocked). */
@@ -1855,13 +1858,16 @@ export default function App() {
                         onClick={() => {
                           toggleEquipSlime(selectedSlimeDetail.id);
                         }}
-                        className={`w-full rounded-xl py-3 text-sm font-black tracking-widest transition-all ${
+                        className={`relative w-full rounded-xl py-3 text-sm font-black tracking-widest transition-all ${
                           currentEquippedIds.includes(selectedSlimeDetail.id)
                           ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md hover:brightness-105'
                           : 'btn-primary-glow shadow-md'
                         }`}
                       >
                         {currentEquippedIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
+                        {!currentEquippedIds.includes(selectedSlimeDetail.id) && hasEmptyEquipSlots && (
+                          <div className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-red-500 shadow-sm" />
+                        )}
                       </button>
                     </div>
               </div>

@@ -671,17 +671,13 @@ export const GameWorld: React.FC<GameWorldProps> = ({
     }
   }, [disableCoins]);
 
-  // Match on-screen coin count to coin cap upgrade (2, 4, 6, …); trim or spawn as level changes.
+  // Trim coins if the cap has been lowered; let the respawn timer fill up normally.
   // Coins are in static world coordinates — no dependency on viewport or nav insets.
   useEffect(() => {
     if (disableCoins) return;
     const cap = onScreenCoinCap(coinCapLevel);
     while (coinsRef.current.length > cap) {
       coinsRef.current.pop();
-    }
-    while (coinsRef.current.length < cap) {
-      const { x, y } = randomWorldCoinPosition();
-      coinsRef.current.push({ id: nextCoinId.current++, x, y, scale: 1 });
     }
   }, [coinCapLevel, disableCoins]);
 
