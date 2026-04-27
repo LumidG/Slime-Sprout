@@ -34,6 +34,7 @@ import {
   Ticket,
   CheckCircle2,
   Gift,
+  ArrowRight,
 } from 'lucide-react';
 import { GameState, INITIAL_STATE, Slime, SlimeTrait, SlimeStats } from './types';
 import { GameWorld } from './components/GameWorld';
@@ -143,6 +144,7 @@ export default function App() {
   const [showLockedNextWorldHint, setShowLockedNextWorldHint] = useState(false);
   const lockedHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const upgradesScrollRef = useRef<HTMLDivElement>(null);
+  const slimeCapUpgradeRef = useRef<HTMLDivElement>(null);
   const [upgradesScrollFadeBottom, setUpgradesScrollFadeBottom] = useState(false);
   const collectionScrollRef = useRef<HTMLDivElement>(null);
   const [collectionScrollFadeBottom, setCollectionScrollFadeBottom] = useState(false);
@@ -328,6 +330,9 @@ export default function App() {
       if (idleGain.currencyEarned > 0) {
         parsed.coins += idleGain.currencyEarned;
         parsed.totalCoinsCollected += idleGain.idleCoins;
+        if ((parsed.gameWorldIndex ?? 0) >= (parsed.maxUnlockedGameWorld ?? 0)) {
+          parsed.worldCoinsCollected = (parsed.worldCoinsCollected ?? 0) + idleGain.currencyEarned;
+        }
         setOfflineWelcome({
           currencyEarned: idleGain.currencyEarned,
           awayMs: diff,
@@ -428,10 +433,10 @@ export default function App() {
       } else {
         parsed.worldCoinsCollected = Math.floor(parsed.worldCoinsCollected);
       }
-      if (!Array.isArray(parsed.worldGoalsClaimed) || parsed.worldGoalsClaimed.length !== 5) {
-        parsed.worldGoalsClaimed = [false, false, false, false, false];
+      if (!Array.isArray(parsed.worldGoalsClaimed) || parsed.worldGoalsClaimed.length !== 8) {
+        parsed.worldGoalsClaimed = [false, false, false, false, false, false, false, false];
       } else {
-        parsed.worldGoalsClaimed = parsed.worldGoalsClaimed.map(Boolean) as [boolean, boolean, boolean, boolean, boolean];
+        parsed.worldGoalsClaimed = parsed.worldGoalsClaimed.map(Boolean) as [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
       }
 
       // Migrate legacy flat equippedSlimeIds → per-world map
@@ -507,6 +512,9 @@ export default function App() {
         ...s,
         coins: s.coins + idleGain.currencyEarned,
         totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+        worldCoinsCollected: s.gameWorldIndex >= s.maxUnlockedGameWorld
+          ? (s.worldCoinsCollected ?? 0) + idleGain.currencyEarned
+          : (s.worldCoinsCollected ?? 0),
         lastSavedTime: now,
       }));
     };
@@ -544,6 +552,9 @@ export default function App() {
               ...s,
               coins: s.coins + idleGain.currencyEarned,
               totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+              worldCoinsCollected: s.gameWorldIndex >= s.maxUnlockedGameWorld
+                ? (s.worldCoinsCollected ?? 0) + idleGain.idleCoins
+                : (s.worldCoinsCollected ?? 0),
               lastSavedTime: now,
             }));
           }
@@ -583,6 +594,9 @@ export default function App() {
         ...s,
         coins: s.coins + idleGain.currencyEarned,
         totalCoinsCollected: s.totalCoinsCollected + idleGain.idleCoins,
+        worldCoinsCollected: s.gameWorldIndex >= s.maxUnlockedGameWorld
+          ? (s.worldCoinsCollected ?? 0) + idleGain.currencyEarned
+          : (s.worldCoinsCollected ?? 0),
         lastSavedTime: now,
       }));
     }, TICK_MS);
@@ -631,7 +645,7 @@ export default function App() {
         coins: prev.coins + count * totalValuePerCoin,
         totalCoinsCollected: prev.totalCoinsCollected + count,
         worldCoinsCollected: isActiveWorld
-          ? (prev.worldCoinsCollected ?? 0) + count
+          ? (prev.worldCoinsCollected ?? 0) + count * totalValuePerCoin
           : (prev.worldCoinsCollected ?? 0),
       };
     });
@@ -713,31 +727,7 @@ export default function App() {
         newlyHatched = rewardSlime;
       }
 
-      // Final goal: unlock the next world, reset upgrades and progress.
-      if (goal.isFinal && prev.maxUnlockedGameWorld < GAME_WORLDS.length - 1) {
-        const nextIndex = prev.maxUnlockedGameWorld + 1;
-        queueMicrotask(() =>
-          setWorldUnlockCelebration({
-            worldIndex: nextIndex,
-            worldName: GAME_WORLDS[nextIndex].name,
-          })
-        );
-        return {
-          ...prev,
-          eggs: prev.eggs + (goal.rewardEggs ?? 0),
-          coins: 0,
-          tickets: (prev.tickets ?? 0) + (goal.rewardTickets ?? 0),
-          slimes: newSlimes,
-          newlyHatchedSlime: newlyHatched,
-          maxUnlockedGameWorld: nextIndex,
-          gameWorldIndex: nextIndex,
-          upgrades: { ...INITIAL_STATE.upgrades },
-          worldCoinsCollected: 0,
-          worldGoalsClaimed: [false, false, false, false, false],
-        };
-      }
-
-      const newGoalsClaimed = [...prev.worldGoalsClaimed] as [boolean, boolean, boolean, boolean, boolean];
+      const newGoalsClaimed = [...prev.worldGoalsClaimed] as [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
       newGoalsClaimed[goalIndex] = true;
 
       return {
@@ -795,20 +785,37 @@ export default function App() {
     });
   };
 
+  const tryUnlockNextWorld = (prev: GameState, newUpgrades: GameState['upgrades']): GameState => {
+    if (prev.maxUnlockedGameWorld >= GAME_WORLDS.length - 1) return { ...prev, upgrades: newUpgrades };
+    if (!areAllGameUpgradesMaxed(newUpgrades, prev.gameWorldIndex)) return { ...prev, upgrades: newUpgrades };
+    const nextIndex = prev.maxUnlockedGameWorld + 1;
+    queueMicrotask(() =>
+      setWorldUnlockCelebration({
+        worldIndex: nextIndex,
+        worldName: GAME_WORLDS[nextIndex].name,
+      })
+    );
+    return {
+      ...prev,
+      upgrades: { ...INITIAL_STATE.upgrades },
+      coins: 0,
+      maxUnlockedGameWorld: nextIndex,
+      gameWorldIndex: nextIndex,
+      worldCoinsCollected: 0,
+      worldGoalsClaimed: [false, false, false, false, false, false, false, false],
+    };
+  };
+
   const buyUpgrade = (key: keyof GameState['upgrades']) => {
     if (isGameUpgradeMaxed(state.upgrades, key, state.gameWorldIndex)) return;
     const currentLevel = state.upgrades[key];
     const cost = key === 'automation' ? UPGRADE_COSTS.automation : (UPGRADE_COSTS as any)[key](currentLevel);
-    
+
     if (state.coins >= cost) {
-      setState(prev => ({
-        ...prev,
-        coins: prev.coins - cost,
-        upgrades: {
-          ...prev.upgrades,
-          [key]: prev.upgrades[key] + 1
-        }
-      }));
+      setState(prev => {
+        const newUpgrades = { ...prev.upgrades, [key]: prev.upgrades[key] + 1 };
+        return tryUnlockNextWorld({ ...prev, coins: prev.coins - cost }, newUpgrades);
+      });
     }
   };
 
@@ -817,7 +824,8 @@ export default function App() {
       if (isGameUpgradeMaxed(prev.upgrades, key, prev.gameWorldIndex)) return prev;
       if (key === 'automation') {
         if (prev.coins < UPGRADE_COSTS.automation) return prev;
-        return { ...prev, coins: prev.coins - UPGRADE_COSTS.automation, upgrades: { ...prev.upgrades, automation: 1 } };
+        const newUpgrades = { ...prev.upgrades, automation: 1 };
+        return tryUnlockNextWorld({ ...prev, coins: prev.coins - UPGRADE_COSTS.automation }, newUpgrades);
       }
       const caps = getMaxGameUpgradeLevelForWorld(prev.gameWorldIndex);
       const cap = caps[key as keyof typeof caps];
@@ -830,7 +838,8 @@ export default function App() {
         level++;
       }
       if (level === prev.upgrades[key]) return prev;
-      return { ...prev, coins, upgrades: { ...prev.upgrades, [key]: level } };
+      const newUpgrades = { ...prev.upgrades, [key]: level };
+      return tryUnlockNextWorld({ ...prev, coins }, newUpgrades);
     });
   };
 
@@ -1100,7 +1109,7 @@ export default function App() {
 
   const debugCompleteCurrentGoal = () => {
     setState((prev) => {
-      const activeGoalIndex = (prev.worldGoalsClaimed ?? [false, false, false, false, false]).findIndex((claimed) => !claimed);
+      const activeGoalIndex = (prev.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).findIndex((claimed) => !claimed);
       if (activeGoalIndex === -1) return prev;
       const goal = LEVEL_GOALS[activeGoalIndex];
       if (!goal) return prev;
@@ -1842,9 +1851,9 @@ export default function App() {
                 <button
                   type="button"
                   onClick={debugCompleteCurrentGoal}
-                  disabled={(state.worldGoalsClaimed ?? [false, false, false, false, false]).every(Boolean)}
+                  disabled={(state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).every(Boolean)}
                   title={
-                    (state.worldGoalsClaimed ?? [false, false, false, false, false]).every(Boolean)
+                    (state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]).every(Boolean)
                       ? 'All goals already completed'
                       : 'Set coin progress to reach the current goal threshold'
                   }
@@ -2106,6 +2115,28 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+
+                <div className="mt-4 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-lime-50/60 px-4 py-3 text-center">
+                  <p className="text-[10px] font-bold text-emerald-700 mb-2.5">
+                    Want to equip more slimes at once?{' '}
+                    <span className="text-emerald-900">Upgrade your Slime Slots</span> to expand your team!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingEquipSlimeId(null);
+                      setState(s => ({ ...s, activeTab: 'game' }));
+                      setIsUpgradesOpen(true);
+                      setTimeout(() => {
+                        slimeCapUpgradeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 200);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-1.5 text-[11px] font-black tracking-wide text-white shadow-md transition-all active:scale-95 hover:brightness-105"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    Go to Upgrades
+                  </button>
+                </div>
               </motion.div>
             </motion.div>
           );
@@ -2169,7 +2200,7 @@ export default function App() {
                   {!isCompletedLevel && (
                     <LevelCompletionBar
                       worldCoinsCollected={state.worldCoinsCollected ?? 0}
-                      goalsClaimed={state.worldGoalsClaimed ?? [false, false, false, false, false]}
+                      goalsClaimed={state.worldGoalsClaimed ?? [false, false, false, false, false, false, false, false]}
                       onClaim={handleClaimGoal}
                       allUpgradesMaxed={areAllGameUpgradesMaxed(state.upgrades, state.gameWorldIndex)}
                       upgradesProgress={getGameUpgradesMaxedProgress(state.upgrades, state.gameWorldIndex)}
@@ -2719,6 +2750,7 @@ export default function App() {
                     maxed={isMaxed('coinValue')}
                   />
                   {state.slimes.length > 0 && (
+                  <div ref={slimeCapUpgradeRef}>
                   <GameUpgradeRow
                     title="Slime cap"
                     description="Equip more slimes to collect coins at once."
@@ -2736,6 +2768,7 @@ export default function App() {
                     onPurchaseMax={() => buyUpgradeMax('slimeCap')}
                     maxed={isMaxed('slimeCap')}
                   />
+                  </div>
                   )}
                       {!isCompletedLevel && state.maxUnlockedGameWorld < GAME_WORLDS.length - 1 && (
                         <div className="mt-0.5 rounded-xl border border-amber-200/70 bg-gradient-to-br from-amber-50/90 to-orange-50/80 px-3 py-2.5">

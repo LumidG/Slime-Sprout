@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gift } from 'lucide-react';
+import { Gift, Check } from 'lucide-react';
 import { LEVEL_GOALS } from '../constants';
 
 interface Particle {
@@ -13,7 +13,7 @@ interface Particle {
 
 interface LevelCompletionBarProps {
   worldCoinsCollected: number;
-  goalsClaimed: [boolean, boolean, boolean, boolean, boolean];
+  goalsClaimed: [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
   onClaim: (goalIndex: number) => void;
 }
 
@@ -117,21 +117,29 @@ export function LevelCompletionBar({ worldCoinsCollected, goalsClaimed, onClaim 
                         : 'bg-black/40 ring-1 ring-white/20'
                   }`}
                 >
-                  <Gift
-                    className={`h-4 w-4 ${isClaimed ? 'text-white' : isActive ? 'text-amber-200/80' : 'text-white/30'}`}
-                    strokeWidth={2.5}
-                  />
+                  {isClaimed ? (
+                    <Check className="h-4 w-4 text-white" strokeWidth={3} />
+                  ) : (
+                    <Gift
+                      className={`h-4 w-4 ${isActive ? 'text-amber-200/80' : 'text-white/30'}`}
+                      strokeWidth={2.5}
+                    />
+                  )}
                 </div>
               ) : (
                 <div
-                  className={`h-5 w-5 rounded-full shadow-sm transition-all ${
+                  className={`flex h-5 w-5 items-center justify-center rounded-full shadow-sm transition-all ${
                     isClaimed
                       ? 'bg-white ring-2 ring-emerald-400/80'
                       : isActive
                         ? 'bg-white/25 ring-2 ring-white/55'
                         : 'bg-black/35 ring-1 ring-white/20'
                   }`}
-                />
+                >
+                  {isClaimed && (
+                    <Check className="h-3 w-3 text-emerald-500" strokeWidth={3} />
+                  )}
+                </div>
               )}
             </div>
           );

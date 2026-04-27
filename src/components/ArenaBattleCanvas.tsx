@@ -419,7 +419,11 @@ export function ArenaBattleCanvas({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dims = useRef({ width: 400, height: 320 });
+  // Start at 0×0 so the game-loop guard (`width < 20 || height < 20`) defers all
+  // initialisation until the ResizeObserver has reported the real canvas size.
+  // This prevents slimes from being placed off-screen on devices narrower than the
+  // old hardcoded 400×320 default.
+  const dims = useRef({ width: 0, height: 0 });
   const slimesRef = useRef<Record<string, SlimePos>>({});
   const lastAbilityProcRef = useRef<Record<string, number>>({});
   /** Battle start time (ms); set on first sim tick for per-ability initial delay calculation. */

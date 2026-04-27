@@ -133,8 +133,8 @@ export interface GameState {
 
   /** Raw coins collected in the current world session (resets on world unlock). */
   worldCoinsCollected: number;
-  /** Which of the 5 per-world level goals have been claimed (resets on world unlock). */
-  worldGoalsClaimed: [boolean, boolean, boolean, boolean, boolean];
+  /** Which of the 8 per-world level goals have been claimed (resets on world unlock). */
+  worldGoalsClaimed: [boolean, boolean, boolean, boolean, boolean, boolean, boolean, boolean];
 }
 
 export const INITIAL_STATE: GameState = {
@@ -173,5 +173,5 @@ export const INITIAL_STATE: GameState = {
     hapticsEnabled: false,
   },
   worldCoinsCollected: 0,
-  worldGoalsClaimed: [false, false, false, false, false],
+  worldGoalsClaimed: [false, false, false, false, false, false, false, false],
 };
