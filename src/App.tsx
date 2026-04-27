@@ -1967,17 +1967,12 @@ export default function App() {
 
       {/* Main Content Area — game fills viewport under floating chrome */}
       <div className={`relative min-h-0 flex-1 overflow-hidden ${isGameTab ? 'bg-transparent' : ''}`}>
-        <AnimatePresence mode="wait">
-          {state.activeTab === 'game' && (
-            <motion.div 
-              key="game"
-              initial={{ y: 12, opacity: 1 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute inset-0 h-full min-h-0 w-full"
-            >
-              <div className="relative h-full min-h-0 w-full">
+        {/* Always-mounted game world — keeps coin/player/slime state across tab switches */}
+        <div
+          className="absolute inset-0 h-full min-h-0 w-full"
+          style={{ display: isGameTab ? '' : 'none' }}
+        >
+          <div className="relative h-full min-h-0 w-full">
                 <div
                   className="absolute inset-0 h-full min-h-0 w-full will-change-transform"
                   style={{
@@ -2005,6 +2000,7 @@ export default function App() {
                         state.maxUnlockedGameWorld < GAME_WORLDS.length - 1)
                     }
                     disableCoins={isCompletedLevel}
+                    paused={!isGameTab}
                   />
                 </div>
 
@@ -2116,9 +2112,9 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </motion.div>
-          )}
+        </div>
 
+        <AnimatePresence mode="wait">
           {state.activeTab === 'slimes' && (
             <motion.div 
               key="slimes"

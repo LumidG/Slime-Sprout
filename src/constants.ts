@@ -60,7 +60,7 @@ export const COIN_SPAWN_INSETS = {
 
 export const COIN_SPAWN_INSET_X_WITH_WORLD_NAV = 52;
 
-export const BASE_RESPAWN_TIME = 3000; // ms
+export const BASE_RESPAWN_TIME = 2200; // ms
 export const BASE_MOVEMENT_SPEED = 1.5;
 
 /** Player base move speed at a movement upgrade level (before buffs) — matches `GameWorld`. */
@@ -81,10 +81,10 @@ export function gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel: number): numb
 
 /**
  * Time between coin spawns — matches `GameWorld` / automation idle math.
- * Linear reduction: 3000 ms at level 0, −200 ms per upgrade, floored at 80 ms.
+ * Linear reduction: 2200 ms at level 0, −200 ms per upgrade, floored at 200 ms (level 10 max).
  */
 export function gameRespawnIntervalMs(respawnTimeLevel: number): number {
-  return Math.max(80, BASE_RESPAWN_TIME - respawnTimeLevel * 200);
+  return Math.max(200, BASE_RESPAWN_TIME - respawnTimeLevel * 200);
 }
 
 /**

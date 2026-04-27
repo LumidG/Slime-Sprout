@@ -258,6 +258,8 @@ interface GameWorldProps {
   insetRightForWorldNav?: boolean;
   /** When true, no coins spawn and existing coins are cleared (completed-level view). */
   disableCoins?: boolean;
+  /** When true, the game loop is paused (e.g. while another tab is active). */
+  paused?: boolean;
 }
 
 /**
@@ -522,10 +524,13 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   insetLeftForWorldNav = false,
   insetRightForWorldNav = false,
   disableCoins = false,
+  paused = false,
 }) => {
   const theme = GAME_WORLDS[Math.min(GAME_WORLDS.length - 1, Math.max(0, worldIndex))];
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   /** Current viewport size in CSS pixels. */
   const dimensionsRef = useRef({ width: GAME_WIDTH, height: GAME_HEIGHT });
   /** Camera top-left corner in world coordinates. */
@@ -684,6 +689,7 @@ export const GameWorld: React.FC<GameWorldProps> = ({
   const respawnInterval = gameRespawnIntervalMs(respawnTimeLevel);
 
   useGameLoop((deltaTime) => {
+    if (pausedRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
