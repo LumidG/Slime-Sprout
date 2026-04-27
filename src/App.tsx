@@ -1866,7 +1866,7 @@ export default function App() {
                       >
                         {currentEquippedIds.includes(selectedSlimeDetail.id) ? 'Unequip' : 'Equip'}
                         {!currentEquippedIds.includes(selectedSlimeDetail.id) && hasEmptyEquipSlots && (
-                          <div className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-red-500 shadow-sm" />
+                          <div className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-orange-500 shadow-sm" />
                         )}
                       </button>
                     </div>
@@ -2192,6 +2192,7 @@ export default function App() {
                       slime={slime} 
                       coins={state.coins}
                       isEquipped={currentEquippedIds.includes(slime.id)}
+                      hasEmptySlot={hasEmptyEquipSlots}
                       onEquip={toggleEquipSlime}
                       onClick={openSlimeDetail}
                       detailSeen={state.slimeDetailSeenIds.includes(slime.id)}
@@ -2762,10 +2763,11 @@ const SlimeCard: React.FC<{
   slime: Slime; 
   coins: number;
   isEquipped: boolean; 
+  hasEmptySlot: boolean;
   onEquip: (id: string) => void;
   onClick: (slime: Slime) => void;
   detailSeen: boolean;
-}> = ({ slime, coins, isEquipped, onEquip, onClick, detailSeen }) => {
+}> = ({ slime, coins, isEquipped, hasEmptySlot, onEquip, onClick, detailSeen }) => {
   const hasAffordableStatUpgrade = (['health', 'strength', 'agility'] as const).some(
     (stat) => slime.statLevels[stat] < MAX_SLIME_STAT_LEVEL && coins >= SLIME_UPGRADE_COST(slime.statLevels[stat])
   );
@@ -2818,13 +2820,16 @@ const SlimeCard: React.FC<{
           e.stopPropagation();
           onEquip(slime.id);
         }}
-        className={`w-full min-h-7 rounded-lg py-1 text-[10px] font-black tracking-wide transition-all ${
+        className={`relative w-full min-h-7 rounded-lg py-1 text-[10px] font-black tracking-wide transition-all ${
           isEquipped 
           ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm ring-1 ring-orange-300/50 hover:brightness-105' 
           : 'btn-primary-glow shadow-sm ring-1 ring-emerald-400/30'
         }`}
       >
         {isEquipped ? 'Equipped' : 'Equip'}
+        {!isEquipped && hasEmptySlot && (
+          <div className="absolute -top-1.5 -right-1.5 h-3 w-3 rounded-full border-2 border-white bg-orange-500 shadow-sm" />
+        )}
       </button>
     </motion.div>
   );
