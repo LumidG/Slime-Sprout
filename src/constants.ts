@@ -81,11 +81,10 @@ export function gameSlimeBaseSpeedAtLevel(slimeMovementSpeedLevel: number): numb
 
 /**
  * Time between coin spawns — matches `GameWorld` / automation idle math.
- * Exponential decay: 3000 ms at level 0, floored at 80 ms at level 10 (~instant).
- * Each tier is ~30% faster than the last (multiplier 0.7 per level).
+ * Linear reduction: 3000 ms at level 0, −200 ms per upgrade, floored at 80 ms.
  */
 export function gameRespawnIntervalMs(respawnTimeLevel: number): number {
-  return Math.max(80, Math.round(BASE_RESPAWN_TIME * Math.pow(0.7, respawnTimeLevel)));
+  return Math.max(80, BASE_RESPAWN_TIME - respawnTimeLevel * 200);
 }
 
 /**
@@ -177,6 +176,18 @@ export const MAX_EQUIPPED_SLIMES = 1;
 /** Equipped-slime slot count at a given Slime Cap upgrade level. Level 0 = 1, each level +1, max 12. */
 export function equippedSlimeCapAtLevel(slimeCapLevel: number): number {
   return MAX_EQUIPPED_SLIMES + Math.max(0, Math.floor(slimeCapLevel));
+}
+
+/**
+ * Starting slimeCap upgrade level when entering a new world.
+ * World 1 (2nd area) starts with 2 unlocked slots (slimeCap = 1).
+ * World 2+ (3rd area onward) starts with 3 unlocked slots (slimeCap = 2).
+ * World 0 starts with the default 1 slot (slimeCap = 0).
+ */
+export function initialSlimeCapForWorld(worldIndex: number): number {
+  if (worldIndex >= 2) return 2;
+  if (worldIndex === 1) return 1;
+  return 0;
 }
 
 /** Arena: both player and enemy teams field this many slimes. */
@@ -591,7 +602,7 @@ export const MAX_GAME_UPGRADE_LEVEL = {
   movementSpeed: 20,
   slimeMovementSpeed: 20,
   respawnTime: 10,
-  coinValue: 20,
+  coinValue: 35,
   coinCap: 10,
   /** 11 tiers: base 1 slot + 11 = 12 max equipped slimes (reached in world 5). */
   slimeCap: 11,
@@ -610,16 +621,17 @@ export type GameUpgradeLevelCaps = {
  * Per-world upgrade caps. Index matches `gameWorldIndex` (0–5).
  * Each world's caps are reached to unlock the next world.
  * Coin respawn and coin cap both max at 10 tiers so they progress together.
+ * Coin value starts at 10 in world 0 and increases by 5 each world (10, 15, 20, 25, 30, 35).
  * Slime Cap tiers are cumulative: world 0 allows 1 tier (2 slots), world 1 allows 3 tiers (4 slots),
  * world 2 → 5 tiers (6 slots), world 3 → 7 tiers (8 slots), world 4 → 9 tiers (10 slots), world 5 → 11 tiers (12 slots).
  */
 export const MAX_GAME_UPGRADE_LEVEL_BY_WORLD: readonly GameUpgradeLevelCaps[] = [
-  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 10, coinValue: 20, coinCap: 10, slimeCap: 1 },
-  { movementSpeed: 25, slimeMovementSpeed: 25, respawnTime: 10, coinValue: 25, coinCap: 10, slimeCap: 3 },
-  { movementSpeed: 30, slimeMovementSpeed: 30, respawnTime: 10, coinValue: 30, coinCap: 10, slimeCap: 5 },
-  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 10, coinValue: 35, coinCap: 10, slimeCap: 7 },
-  { movementSpeed: 40, slimeMovementSpeed: 40, respawnTime: 10, coinValue: 40, coinCap: 10, slimeCap: 9 },
-  { movementSpeed: 45, slimeMovementSpeed: 45, respawnTime: 10, coinValue: 45, coinCap: 10, slimeCap: 11 },
+  { movementSpeed: 20, slimeMovementSpeed: 20, respawnTime: 10, coinValue: 10, coinCap: 10, slimeCap: 1 },
+  { movementSpeed: 25, slimeMovementSpeed: 25, respawnTime: 10, coinValue: 15, coinCap: 10, slimeCap: 3 },
+  { movementSpeed: 30, slimeMovementSpeed: 30, respawnTime: 10, coinValue: 20, coinCap: 10, slimeCap: 5 },
+  { movementSpeed: 35, slimeMovementSpeed: 35, respawnTime: 10, coinValue: 25, coinCap: 10, slimeCap: 7 },
+  { movementSpeed: 40, slimeMovementSpeed: 40, respawnTime: 10, coinValue: 30, coinCap: 10, slimeCap: 9 },
+  { movementSpeed: 45, slimeMovementSpeed: 45, respawnTime: 10, coinValue: 35, coinCap: 10, slimeCap: 11 },
 ];
 
 /** Returns the upgrade caps for a given world index (falls back to world-0 caps if out of range). */
@@ -804,9 +816,9 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     label: 'Collect 5 coins',
     rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 3,
+    rewardTickets: 1,
     rewardSlime: false,
-    rewardLabel: '+3 Tickets 🎟️',
+    rewardLabel: '+1 Ticket 🎟️',
   },
   {
     threshold: 117,
@@ -822,9 +834,9 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     label: 'Collect 387 coins',
     rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 3,
+    rewardTickets: 1,
     rewardSlime: false,
-    rewardLabel: '+3 Tickets 🎟️',
+    rewardLabel: '+1 Ticket 🎟️',
   },
   {
     threshold: 870,
@@ -840,9 +852,9 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     label: 'Collect 1934 coins',
     rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 3,
+    rewardTickets: 1,
     rewardSlime: false,
-    rewardLabel: '+3 Tickets 🎟️',
+    rewardLabel: '+1 Ticket 🎟️',
   },
   {
     threshold: 3915,
@@ -858,18 +870,18 @@ export const LEVEL_GOALS: readonly LevelGoal[] = [
     label: 'Collect 7830 coins',
     rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 3,
+    rewardTickets: 1,
     rewardSlime: false,
-    rewardLabel: '+3 Tickets 🎟️',
+    rewardLabel: '+1 Ticket 🎟️',
   },
   {
     threshold: 15660,
     label: 'Collect 15660 coins',
     rewardEggs: 0,
     rewardCoins: 0,
-    rewardTickets: 3,
+    rewardTickets: 1,
     rewardSlime: true,
-    rewardLabel: '+3 Tickets + ✨ Rare Slime',
+    rewardLabel: '+1 Ticket + ✨ Rare Slime',
     isFinal: true,
   },
 ] as const;

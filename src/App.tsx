@@ -61,6 +61,7 @@ import {
   TRAIT_EFFECTS,
   MAX_EQUIPPED_SLIMES,
   equippedSlimeCapAtLevel,
+  initialSlimeCapForWorld,
   PLAY_STORE_LISTING_URL,
   SUPPORT_MAILTO,
   GAME_WORLDS,
@@ -293,7 +294,7 @@ export default function App() {
     (!isGameUpgradeMaxed(state.upgrades, 'slimeCap') &&
       state.coins >= scaleUpgradeCostForWorld(UPGRADE_COSTS.slimeCap(state.upgrades.slimeCap), state.gameWorldIndex));
   
-  const hasSlimesNotification = false;
+  const hasSlimesNotification = (state.tickets ?? 0) >= SLIME_COST_TICKETS;
 
   const isGameTab = state.activeTab === 'game';
   /** True when the player is viewing a world they've already beaten (index < max unlocked). */
@@ -753,7 +754,7 @@ export default function App() {
         );
         return {
           ...updatedState,
-          upgrades: { ...INITIAL_STATE.upgrades },
+          upgrades: { ...INITIAL_STATE.upgrades, slimeCap: initialSlimeCapForWorld(nextIndex) },
           coins: 0,
           maxUnlockedGameWorld: nextIndex,
           gameWorldIndex: nextIndex,
@@ -822,7 +823,7 @@ export default function App() {
     );
     return {
       ...prev,
-      upgrades: { ...INITIAL_STATE.upgrades },
+      upgrades: { ...INITIAL_STATE.upgrades, slimeCap: initialSlimeCapForWorld(nextIndex) },
       coins: 0,
       maxUnlockedGameWorld: nextIndex,
       gameWorldIndex: nextIndex,
@@ -2130,18 +2131,21 @@ export default function App() {
                       type="button"
                       onClick={() => buySlimes(1)}
                       disabled={(state.tickets ?? 0) < SLIME_COST_TICKETS}
-                      className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                      className="ui-afford-disabled group relative flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
                       <span className="inline-flex items-baseline justify-center gap-4 whitespace-nowrap text-sm font-black leading-tight tracking-wide text-white/95 group-disabled:text-zinc-700">
                         <span>Buy x1</span>
                         <span className="text-base tabular-nums text-white/95 group-disabled:text-red-600">{SLIME_COST_TICKETS} 🎟️</span>
                       </span>
+                      {(state.tickets ?? 0) >= SLIME_COST_TICKETS && (
+                        <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />
+                      )}
                     </button>
                     <button 
                       type="button"
                       onClick={() => buySlimes(10)}
                       disabled={(state.tickets ?? 0) < SLIME_BULK_10_COST_TICKETS}
-                      className="ui-afford-disabled group flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
+                      className="ui-afford-disabled group relative flex min-h-14 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border-2 border-orange-500 bg-gradient-to-br from-amber-400 to-orange-500 px-2 py-2.5 font-black text-white shadow-md transition-all hover:brightness-105 disabled:border-zinc-300 disabled:from-zinc-200 disabled:via-zinc-200 disabled:to-zinc-300 disabled:text-zinc-900 disabled:shadow-none"
                     >
                       <span className="inline-flex items-baseline justify-center gap-4 whitespace-nowrap text-sm font-black leading-tight tracking-wide text-white/95 group-disabled:text-zinc-700">
                         <span>Buy x10</span>
@@ -2149,6 +2153,9 @@ export default function App() {
                           {SLIME_BULK_10_COST_TICKETS} 🎟️
                         </span>
                       </span>
+                      {(state.tickets ?? 0) >= SLIME_BULK_10_COST_TICKETS && (
+                        <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow-sm" />
+                      )}
                     </button>
                   </div>
                 </div>

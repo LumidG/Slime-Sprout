@@ -467,7 +467,10 @@ export function SlimeArenaPanel({
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-2">
         <p className="mb-1.5 text-[8px] font-black uppercase tracking-wider text-emerald-800">Your slimes</p>
         <div className="grid grid-cols-3 gap-1.5">
-          {slimes.map((slime) => {
+          {[...slimes].sort((a, b) =>
+            (b.stats.health + b.stats.strength + b.stats.agility) -
+            (a.stats.health + a.stats.strength + a.stats.agility)
+          ).map((slime) => {
             const inLineup = lineupIds.includes(slime.id);
             return (
               <button
