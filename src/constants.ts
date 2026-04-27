@@ -413,6 +413,7 @@ export function generateArenaEncounter(seed: number, arenaWins = 0): ArenaEncoun
   /**
    * First three lifetime arena wins use a very soft curve (plus {@link arenaEarlyFightPlayerPowerBonus})
    * so fresh hatched slimes almost always win without upgrades.
+   * From win 3 onward the base scales by +20 per win so difficulty grows continuously.
    */
   let enemyPower: number;
   if (arenaWins <= 0) {
@@ -422,7 +423,8 @@ export function generateArenaEncounter(seed: number, arenaWins = 0): ArenaEncoun
   } else if (arenaWins === 2) {
     enemyPower = 23 + Math.floor(r() * 10);
   } else {
-    enemyPower = 95 + Math.floor(r() * 145);
+    const winsOver3 = arenaWins - 3;
+    enemyPower = 95 + winsOver3 * 20 + Math.floor(r() * 145);
   }
   const rewardCoins = 350 + Math.floor(enemyPower * 4.5);
   const rewardTickets = 1 + Math.floor(r() * 3);

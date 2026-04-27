@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, HeartCrack, Sword, Wind, Swords, Trophy, ChevronsRight, FastForward, LogOut } from 'lucide-react';
+import { Heart, HeartCrack, Sword, Wind, Swords, Trophy, FastForward, LogOut } from 'lucide-react';
 import type { Slime, SlimeArenaAbility } from '../types';
 import {
   ARENA_TEAM_SIZE,
@@ -275,31 +275,6 @@ export function SlimeArenaPanel({
   const toggleSpeed = useCallback(() => {
     setBattleSpeed((s) => (s === 1 ? 2 : 1));
   }, []);
-
-  const skipBattle = useCallback(() => {
-    const ctx = resolveContextRef.current;
-    if (!ctx) return;
-    const abilityUsedIds: Record<string, boolean> = {};
-    [ctx.s0, ctx.s1, ctx.s2, ctx.s3].forEach((s) => {
-      if (s.arenaAbility !== 'None') {
-        abilityUsedIds[s.id] = !isArenaAbilityOnCooldown(slimeArenaAbilityCooldownUntil, s.id, now);
-      }
-    });
-    const { won } = resolveArenaBattle(
-      ctx.encounter,
-      [ctx.s0, ctx.s1, ctx.s2, ctx.s3],
-      abilityUsedIds,
-      ctx.arenaWinsBeforeBattle
-    );
-    const arenaAbilityUserIds = Object.keys(abilityUsedIds).filter((id) => abilityUsedIds[id]);
-    playerAbilityFiredRef.current = {};
-    battleEarlyEndRef.current = null;
-    resolveContextRef.current = null;
-    setBattleSession(null);
-    setLiveAbilityFired({});
-    setResult({ won, encounter: ctx.encounter });
-    onBattleEnd({ won, encounter: ctx.encounter, teamIds: ctx.teamIds, arenaAbilityUserIds });
-  }, [slimeArenaAbilityCooldownUntil, now, onBattleEnd]);
 
   const exitBattle = useCallback(() => {
     playerAbilityFiredRef.current = {};
@@ -601,14 +576,7 @@ export function SlimeArenaPanel({
                   <FastForward className="h-4 w-4" aria-hidden />
                   {battleSpeed === 2 ? '2× On' : '2× Speed'}
                 </button>
-                <button
-                  type="button"
-                  onClick={skipBattle}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/15 py-3 text-sm font-black uppercase tracking-wide text-violet-100 transition-all hover:bg-white/25"
-                >
-                  <ChevronsRight className="h-4 w-4" aria-hidden />
-                  Skip
-                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowExitConfirm(true)}
