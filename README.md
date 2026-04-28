@@ -31,7 +31,7 @@ After you change the web app, run a build and sync (or `npm run android`) so the
 - **React** + **TypeScript** + **Vite**
 - **Tailwind CSS** for styling
 - **Motion** for animations, **Lucide** for icons
-- **Capacitor** for the Android shell (`appId`: `com.nightskygames.slimesprout`)
+- **Capacitor** for the Android shell (`appId`: `com.nightskygames.slimeschooltycoon`)
 
 ## Project layout
 

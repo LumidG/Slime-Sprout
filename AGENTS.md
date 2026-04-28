@@ -15,7 +15,7 @@ Guidance for coding agents working in this repository.
 | Styling | Tailwind CSS v4 via `@tailwindcss/vite` (`src/index.css` uses `@import "tailwindcss"`) |
 | Animation | Motion (`motion/react`) |
 | Icons | `lucide-react` |
-| Native shell | Capacitor 8 — Android (`appId`: `com.nightskygames.slimesprout`, `webDir`: `dist`) |
+| Native shell | Capacitor 8 — Android (`appId`: `com.nightskygames.slimeschooltycoon`, `webDir`: `dist`) |
 | Capacitor APIs | `@capacitor/app` (foreground), `@capacitor/haptics` (optional tap feedback) |
 | Custom native | `SystemUi` plugin — immersive status/navigation bars on Android (`src/systemUi.ts`, `android/.../SystemUiPlugin.java`) |
 

@@ -9,7 +9,7 @@ import { rollNewSlimeVisuals } from './slimeSprites';
 
 /** Google Play listing (same id as `capacitor.config.ts` appId). */
 export const PLAY_STORE_LISTING_URL =
-  'https://play.google.com/store/apps/details?id=com.nightskygames.slimesprout';
+  'https://play.google.com/store/apps/details?id=com.nightskygames.slimeschooltycoon';
 
 /** Update to your real support address. */
 export const SUPPORT_MAILTO =

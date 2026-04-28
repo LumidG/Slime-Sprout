@@ -1,4 +1,4 @@
-package com.nightskygames.slimesprout;
+package com.nightskygames.slimeschooltycoon;
 
 import android.app.Activity;
 import androidx.core.view.WindowCompat;

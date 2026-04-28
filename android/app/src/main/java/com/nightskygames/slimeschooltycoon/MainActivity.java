@@ -1,21 +1,41 @@
-package com.nightskygames.slimesprout;
+package com.nightskygames.slimeschooltycoon;
 
-import android.os.Bundle;
-import androidx.core.view.WindowCompat;
 import com.getcapacitor.BridgeActivity;
 
+import android.os.Bundle;
+import android.util.Log;
+import com.singular.sdk.Singular;
+import com.singular.sdk.SingularConfig;
+import com.facebook.FacebookSdk;
+import android.graphics.Color;
+import android.os.Build;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+
 public class MainActivity extends BridgeActivity {
-  @Override
-  public void onCreate(Bundle savedInstanceState) {
-    registerPlugin(SystemUiPlugin.class);
-    super.onCreate(savedInstanceState);
+    private static final String TAG = "Singular";
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         hideSystemUI();
         FacebookSdk.sdkInitialize(getApplicationContext());
-    // Edge-to-edge: WebView draws under status / nav bars; CSS env(safe-area-inset-*) pads HUD.
-    WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-    // Hide status/nav bars immediately (before WebView paints loading UI). React syncs Slimes/Market later.
-    SystemUiPlugin.applyImmersive(this, true);
-  }
+        SingularConfig config = new SingularConfig("lumidlabs_cdb31fca", "aaf9a79c33b9ad6d3df20905f0ac8c15");
+        config.withLoggingEnabled();
+        Singular.init(this, config);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        hideSystemUI();
+        Log.d(TAG, "onResume: Sending Login event to Singular");
+        Singular.event("Login");
+        Log.d(TAG, "onResume: Login event sent successfully.");
+    }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -50,4 +70,6 @@ public class MainActivity extends BridgeActivity {
         }
     }
 }
+
+
 
