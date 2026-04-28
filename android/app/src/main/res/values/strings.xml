@@ -4,4 +4,7 @@
     <string name="title_activity_main">Slime School Tycoon</string>
     <string name="package_name">com.nightskygames.slimesprout</string>
     <string name="custom_url_scheme">com.nightskygames.slimesprout</string>
+    <string name="facebook_app_id">1744753490013772</string>
+    <string name="facebook_client_token">d0181262c4807618d10a7b2e592981c1</string>
+    <string name="fb_login_protocol_scheme">fb1744753490013772</string>
 </resources>
