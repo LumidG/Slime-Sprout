@@ -1,0 +1,119 @@
+name: Add Android 
+
+on:
+  push:
+    branches: [ app ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  capacitor-install:
+    name: Install Capacitor
+    if: |
+      github.ref_name == 'app' &&
+      contains(github.event.head_commit.message, '[install]') &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Capacitor
+        run: npm install @capacitor/core@8.0.0 @capacitor/cli@8.0.0 @capacitor/android@8.0.0
+
+      - name: Initialize Capacitor
+        run: |
+          if [ -f capacitor.config.ts ] || [ -f capacitor.config.json ] || [ -f capacitor.config.js ]; then
+            echo "Capacitor already initialized. Skipping."
+          else
+            REPO="${{ github.event.repository.name }}"
+            APP_NAME="$(echo "$REPO" | sed -E 's/[^A-Za-z0-9]+/ /g' | awk '{for(i=1;i<=NF;i++){ $i=toupper(substr($i,1,1)) substr($i,2)}}1')"
+            APP_ID="com.nightskygames.$(echo "$REPO" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+//g')"
+            npx --yes cap init "$APP_NAME" "$APP_ID" --web-dir=dist
+          fi
+
+      - name: Add Android platform
+        run: |
+          if [ ! -d android ]; then
+            npx --yes cap add android
+          else
+            echo "Android platform already exists. Skipping add."
+          fi
+
+      - name: Commit changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: install Capacitor [skip ci]"
+          git push
+
+  build-apk:
+    name: Build, sync and upload APK
+    if: |
+      github.ref_name == 'app' &&
+      contains(github.event.head_commit.message, '[build]') &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Install dependencies and sync
+        run: |
+          npm install
+          npm run -s build || echo "No build script found; skipping build"
+          npx --yes cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew dependencies
+          ./gradlew assembleRelease
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          REPO_NAME="${{ github.event.repository.name }}"
+          NEW_APK_NAME=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g')-debug.apk
+          mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/$NEW_APK_NAME
+          echo "APK_NAME=$NEW_APK_NAME" >> $GITHUB_ENV
+          echo "APK_PATH=android/app/build/outputs/apk/debug/$NEW_APK_NAME" >> $GITHUB_ENV
+
+      - name: Commit changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Build and Sync capacitor [skip ci]"
+          git push
+          
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_PATH }}
