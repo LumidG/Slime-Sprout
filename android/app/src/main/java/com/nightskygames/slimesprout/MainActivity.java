@@ -15,3 +15,4 @@ public class MainActivity extends BridgeActivity {
     SystemUiPlugin.applyImmersive(this, true);
   }
 }
+
