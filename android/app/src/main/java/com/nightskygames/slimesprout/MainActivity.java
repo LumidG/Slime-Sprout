@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(SystemUiPlugin.class);
     super.onCreate(savedInstanceState);
+        FacebookSdk.sdkInitialize(getApplicationContext());
     // Edge-to-edge: WebView draws under status / nav bars; CSS env(safe-area-inset-*) pads HUD.
     WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
     // Hide status/nav bars immediately (before WebView paints loading UI). React syncs Slimes/Market later.
